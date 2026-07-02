@@ -266,12 +266,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
   <div class="forecast-hd">
     <div>
       <h2>Forecast by Team</h2>
-      <div class="sub">Hours demand per department · computed from Build Type time studies · <span id="fcBuildCount">—</span> active scheduled builds</div>
+      <div class="sub">Demand per team from Smartsheet · <span id="fcBuildCount">—</span> active scheduled builds</div>
     </div>
-    <div class="period-grp" style="margin-left:auto">
-      <button class="period-btn active" onclick="setDeptPeriod('week',this)">Weeks</button>
-      <button class="period-btn" onclick="setDeptPeriod('month',this)">Months</button>
-      <button class="period-btn" onclick="setDeptPeriod('quarter',this)">Quarters</button>
+    <!-- Hours / FTE toggle -->
+    <div style="margin-left:auto;display:flex;align-items:center;gap:3px;background:#1C2840;border:1px solid #2A3858;border-radius:8px;padding:3px">
+      <button id="btnUnitHrs" class="period-btn active" onclick="setUnit('hours')">Hours</button>
+      <button id="btnUnitFte" class="period-btn" onclick="setUnit('fte')">FTEs</button>
+    </div>
+    <!-- Week window -->
+    <div class="period-grp">
+      <button class="period-btn win-btn active" data-w="4" onclick="setFcWindow(4)">4 Weeks</button>
+      <button class="period-btn win-btn" data-w="8" onclick="setFcWindow(8)">8 Weeks</button>
+      <button class="period-btn win-btn" data-w="13" onclick="setFcWindow(13)">13 Weeks</button>
     </div>
     <button class="btn btn-ghost btn-sm" onclick="openBuildHours()">✎ Edit Build Hours</button>
     <span id="capDragHint" style="font-size:11px;color:#94A2BC;display:none">↕ drag red line to set capacity</span>
@@ -344,6 +350,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 const SHEET_MAIN   = '6805949508439940';
 const SHEET_LOOKUP = '2372330635349892';
 const HRS          = 30; // hrs per FTE per week (6h/day × 5 days)
+const FTE_HRS      = 50; // 1 FTE = 50 hours (unit toggle)
 
 const RAGC = {Red:'#E24B4A',Yellow:'#EF9F27',Green:'#639922',Gray:'#B8B5AC','':'#D9D9CD'};
 const PAL  = ['#4AA3E0','#8B7FE8','#3FC1C9','#5BD1A6','#7ED957','#C0E862','#6C8CE0','#36D6D0','#A9CBE3','#E58C24','#F4C77E'];
@@ -405,6 +412,8 @@ let STATE = {
   fcPeriod: 'week',
   deptPeriod: 'week',
   fcCapacity: LS.get('fcCapacity', null), // null = use computed totalCap()
+  displayUnit: LS.get('displayUnit', 'hours'), // 'hours' or 'fte'
+  fcWindow: LS.get('fcWindow', 4),             // weeks to show in dept cards
   syncedAt: null,
   apiKey: LS.get('apiKey',''),
   sheetMain:   LS.get('sheetMain',   SHEET_MAIN),
@@ -698,23 +707,45 @@ function sortBy(key){if(STATE.sortKey===key)STATE.sortAsc=!STATE.sortAsc;else{ST
 // ═══════════════════════════════════════════════════════════════════════════════
 // FORECAST TAB: RENDER
 // ═══════════════════════════════════════════════════════════════════════════════
-function setDeptPeriod(p,btn){STATE.deptPeriod=p;document.querySelectorAll('#tabForecast .period-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderForecastTab();}
+function setUnit(u) {
+  STATE.displayUnit = u;
+  LS.set('displayUnit', u);
+  document.getElementById('btnUnitHrs').classList.toggle('active', u==='hours');
+  document.getElementById('btnUnitFte').classList.toggle('active', u==='fte');
+  renderForecastTab();
+}
+
+function setFcWindow(n) {
+  STATE.fcWindow = n;
+  LS.set('fcWindow', n);
+  document.querySelectorAll('.win-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.w)===n));
+  renderForecastTab();
+}
 
 function renderForecastTab() {
-  const weekData = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
-  const data = aggregateWeekData(weekData, STATE.deptPeriod);
+  // Build weekly demand then filter to current week onward
+  const allWeeks = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
+  const todayMonday = getMonday(new Date());
+  const futureWeeks = allWeeks.filter(w => w.weekDate >= todayMonday);
   document.getElementById('fcBuildCount').textContent = STATE.scheduleBuilds.length;
+  // Sync toggle buttons
+  document.getElementById('btnUnitHrs').classList.toggle('active', STATE.displayUnit==='hours');
+  document.getElementById('btnUnitFte').classList.toggle('active', STATE.displayUnit==='fte');
+  document.querySelectorAll('.win-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.w)===STATE.fcWindow));
   updateCapInfo();
-  renderFactoryChart(data);
-  renderDeptCards(data);
+  renderFactoryChart(futureWeeks);
+  renderDeptCards(futureWeeks);
 }
 
 function updateCapInfo() {
   const computed = totalCap();
   const overridden = STATE.fcCapacity !== null;
-  const display = overridden ? STATE.fcCapacity : computed;
+  const displayHrs = overridden ? STATE.fcCapacity : computed;
+  const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
+  const capDisp = +(displayHrs / div).toFixed(1);
+  const suffix = STATE.displayUnit === 'fte' ? ' FTEs/week' : 'h/week';
   document.getElementById('totalCapInfo').textContent =
-    `Total capacity: ${display}h/week${overridden ? ' (manually set — drag red line to adjust)' : ` across ${STATE.teams.length} teams`}.`;
+    `Total capacity: ${capDisp}${suffix}${overridden ? ' (manually set — drag red line to adjust)' : ` across ${STATE.teams.length} teams`}.`;
   document.getElementById('resetCapBtn').style.display = overridden ? '' : 'none';
   document.getElementById('capDragHint').style.display = overridden ? 'none' : '';
 }
@@ -726,29 +757,48 @@ function resetCapacity() {
 }
 
 function renderFactoryChart(data) {
-  const labels = data.map(d=>getWeekLabel(d,STATE.deptPeriod));
-  const wc = data.map(d=>d._count||1);
+  const labels = data.map(d => fmtWeek(d.weekDate));
+  const wc = data.map(() => 1);
   const baseCap = STATE.fcCapacity !== null ? STATE.fcCapacity : totalCap();
+  const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
+  const unitLbl = STATE.displayUnit === 'fte' ? 'FTEs' : 'Hours';
+  const capDisp = +(baseCap / div).toFixed(1);
+  const capSufx = STATE.displayUnit === 'fte' ? ' FTEs/wk' : 'h/wk';
 
-  const ds = STATE.teams.map((t,i)=>({
-    label:t.name, type:'bar',
-    data:data.map(d=>+(d[t.key]||0).toFixed(1)),
-    backgroundColor:t.color, stack:'d', borderWidth:0,
+  const ds = STATE.teams.map(t => ({
+    label: t.name, type: 'bar',
+    data: data.map(d => +((d[t.key]||0) / div).toFixed(1)),
+    backgroundColor: t.color, stack: 'd', borderWidth: 0,
   }));
-  ds.push({label:'Capacity',type:'line',data:data.map((_,i)=>baseCap*(wc[i]||1)),borderColor:'#E2574F',borderDash:[6,4],borderWidth:3,pointRadius:6,pointBackgroundColor:'#E2574F',pointHoverRadius:9,fill:false,order:0});
+  ds.push({
+    label:'Capacity', type:'line',
+    data: data.map(() => capDisp),
+    borderColor:'#E2574F', borderDash:[6,4], borderWidth:3,
+    pointRadius:6, pointBackgroundColor:'#E2574F', pointHoverRadius:9,
+    fill:false, order:0
+  });
 
-  document.getElementById('deptLegend').innerHTML=STATE.teams.map(t=>`<span><span class="lsw" style="background:${t.color}"></span>${t.name}</span>`).join('')
-    +`<span style="font-weight:700"><span class="lln"></span>Capacity (${baseCap}h/wk — drag to adjust)</span>`;
+  document.getElementById('deptLegend').innerHTML =
+    STATE.teams.map(t => `<span><span class="lsw" style="background:${t.color}"></span>${t.name}</span>`).join('') +
+    `<span style="font-weight:700"><span class="lln"></span>Capacity (${capDisp}${capSufx} — drag to adjust)</span>`;
 
-  mkChart('cFactory',{type:'bar',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
-      if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw}h (drag line to adjust)`;
-      return `${ctx.dataset.label}: ${ctx.raw}h`;
-    }}}},
-    scales:{x:{stacked:true,grid:{display:false},ticks:{...darkTicks,maxRotation:45,minRotation:45}},
-      y:{stacked:true,title:{display:true,text:'Hours',color:'#94A2BC',font:{size:11}},grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
+  mkChart('cFactory', {type:'bar', data:{labels, datasets:ds}, options:{
+    responsive:true, maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx => {
+        const u = STATE.displayUnit === 'fte' ? ' FTEs' : 'h';
+        if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw}${u} (drag to adjust)`;
+        return `${ctx.dataset.label}: ${ctx.raw}${u}`;
+      }}}
+    },
+    scales:{
+      x:{stacked:true, grid:{display:false}, ticks:{...darkTicks, maxRotation:45, minRotation:45}},
+      y:{stacked:true, title:{display:true, text:unitLbl, color:'#94A2BC', font:{size:11}},
+         grid:darkGrid, ticks:{...darkTicks, precision: STATE.displayUnit==='fte' ? 1 : 0}}
+    }
+  }});
 
-  // Attach drag after chart is rendered
   attachCapacityDrag('cFactory', data, wc);
 }
 
@@ -790,29 +840,29 @@ function attachCapacityDrag(chartId, data, wc) {
 
     // Convert y-pixel → data value for wc[0], then derive base cap
     const rawValue = chart.scales.y.getValueForPixel(y);
-    const wc0 = wc[0] || 1;
-    const newBaseCap = Math.max(0, Math.round(rawValue / wc0));
+    // y-axis is in display units; convert back to hours for storage
+    const newBaseCap = Math.max(0, Math.round(rawValue * (STATE.displayUnit === 'fte' ? FTE_HRS : 1)));
     STATE.fcCapacity = newBaseCap;
 
-    // Live-update the capacity dataset without full re-render
+    const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
     const capDataset = chart.data.datasets[chart.data.datasets.length - 1];
-    capDataset.data = data.map((_,i) => newBaseCap * (wc[i]||1));
+    capDataset.data = data.map(() => +(newBaseCap / div).toFixed(1));
     chart.update('none');
 
-    // Update legend + info live
+    const capDisp = +(newBaseCap / div).toFixed(1);
+    const capSufx = STATE.displayUnit === 'fte' ? ' FTEs/wk' : 'h/wk';
     document.getElementById('deptLegend').querySelector('span:last-child').innerHTML =
-      `<span class="lsw" style="display:inline-block;width:18px;height:0;border-top:2.5px solid #E2574F;margin-right:4px;vertical-align:middle"></span>Capacity (${newBaseCap}h/wk — drag to adjust)`;
+      `<span class="lsw" style="display:inline-block;width:18px;height:0;border-top:2.5px solid #E2574F;margin-right:4px;vertical-align:middle"></span>Capacity (${capDisp}${capSufx} — drag to adjust)`;
     document.getElementById('totalCapInfo').textContent =
-      `Total capacity: ${newBaseCap}h/week (manually set — drag red line to adjust).`;
+      `Total capacity: ${capDisp}${capSufx} (manually set — drag red line to adjust).`;
 
-    // Show floating label near line
     if (!labelEl) {
       labelEl = document.createElement('div');
       labelEl.style.cssText='position:absolute;background:#E2574F;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;pointer-events:none;z-index:50;white-space:nowrap';
       canvas.parentElement.style.position='relative';
       canvas.parentElement.appendChild(labelEl);
     }
-    labelEl.textContent = `${newBaseCap}h/wk`;
+    labelEl.textContent = `${capDisp}${capSufx}`;
     labelEl.style.top  = Math.max(4, y - 22) + 'px';
     labelEl.style.left = '10px';
   }
@@ -854,27 +904,32 @@ function attachCapacityDrag(chartId, data, wc) {
 }
 
 function renderDeptCards(data) {
-  const slice = data.slice(0,16);
-  const labels = slice.map(d=>getWeekLabel(d,STATE.deptPeriod));
+  const slice = data.slice(0, STATE.fcWindow);
+  const labels = slice.map(d => fmtWeek(d.weekDate));
+  const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
+  const unitSfx = STATE.displayUnit === 'fte' ? ' FTE' : 'h';
   const grid = document.getElementById('deptGrid');
   grid.innerHTML = '';
 
   STATE.teams.forEach((t,ti) => {
-    const demand = slice.map(d=>+(d[t.key]||0).toFixed(1));
-    const cap = teamCap(t);
-    const capLine = slice.map(d=>cap*(d._count||1));
-    const bgColors = demand.map((v,i)=>v>capLine[i]?'#E24B4A':t.color);
+    const capHrs = teamCap(t);
+    const capDisp = +(capHrs / div).toFixed(1);
+    const demand = slice.map(d => +((d[t.key]||0) / div).toFixed(1));
+    const capLine = slice.map(() => capDisp);
+    const bgColors = demand.map((v,i) => v > capLine[i] ? '#E24B4A' : t.color);
 
     const card = document.createElement('div');
     card.className='dept-card';
     card.style.borderTopColor=t.color;
     card.dataset.teamIdx=ti;
 
-    const pills = slice.slice(0,8).map((d,i)=>{
-      const dem=d[t.key]||0, c=cap*(d._count||1);
-      return dem>c
-        ?`<span class="pill pill-over">+${Math.round(dem-c)}h</span>`
-        :`<span class="pill pill-ok">OK</span>`;
+    const pills = slice.map((d,i) => {
+      const dem = (d[t.key]||0) / div;
+      const c = capDisp;
+      const diff = +(dem - c).toFixed(1);
+      return dem > c
+        ? `<span class="pill pill-over">+${Math.abs(diff)}${unitSfx}</span>`
+        : `<span class="pill pill-ok">OK</span>`;
     }).join('');
 
     card.innerHTML = `
@@ -882,8 +937,8 @@ function renderDeptCards(data) {
         <input class="dept-name-input" value="${t.name}" onchange="updateTeamName(${ti},this.value)" style="background:transparent;border:none;border-bottom:1px dashed #4AA3E0;color:#E8ECF3;font-size:14px;font-weight:700;width:160px">
         <div class="cap-edit">
           <label>Cap/wk</label>
-          <input class="cap-input" type="number" value="${cap}" title="Total = sum of people below" readonly tabindex="-1" style="color:#94A2BC">
-          <span style="font-size:10px;color:#94A2BC">h</span>
+          <input class="cap-input" type="number" value="${capDisp}" title="Total = sum of people below" readonly tabindex="-1" style="color:#94A2BC">
+          <span style="font-size:10px;color:#94A2BC">${unitSfx}</span>
         </div>
       </div>
       <div class="dept-lead">${t.people.length} person${t.people.length>1?'s':''} · lead: ${t.lead}</div>
@@ -895,10 +950,8 @@ function renderDeptCards(data) {
     `;
     grid.appendChild(card);
 
-    // Render people
     renderPeopleList(ti);
 
-    // Mini chart
     if(charts[`dc_${t.key}`]) charts[`dc_${t.key}`].destroy();
     charts[`dc_${t.key}`] = new Chart(document.getElementById(`dc_${t.key}`).getContext('2d'),{
       type:'bar',
@@ -908,12 +961,13 @@ function renderDeptCards(data) {
       ]},
       options:{responsive:true,maintainAspectRatio:false,
         plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
-          if(ctx.dataset.label==='Cap') return `Cap: ${ctx.raw}h`;
+          if(ctx.dataset.label==='Cap') return `Cap: ${ctx.raw}${unitSfx}`;
           const c=capLine[ctx.dataIndex];
-          return `${ctx.raw.toFixed(0)}h`+(ctx.raw>c?` (+${Math.round(ctx.raw-c)}h OVER)`:' ✓ SAFE');
+          return `${ctx.raw.toFixed(1)}${unitSfx}`+(ctx.raw>c?` (+${(ctx.raw-c).toFixed(1)}${unitSfx} OVER)`:' ✓ SAFE');
         }}}},
         scales:{x:{grid:{display:false},ticks:{...darkTicks,font:{size:9},maxRotation:45,minRotation:45}},
-          y:{grid:darkGrid,ticks:{...darkTicks,font:{size:9},precision:0}}}
+          y:{grid:darkGrid,ticks:{...darkTicks,font:{size:9},precision: STATE.displayUnit==='fte' ? 1 : 0},
+             title:{display:true,text:STATE.displayUnit==='fte'?'FTEs':'Hours',color:'#94A2BC',font:{size:9}}}}
       }
     });
   });
