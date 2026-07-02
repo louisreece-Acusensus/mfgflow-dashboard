@@ -88,6 +88,8 @@ td{padding:10px 14px 10px 0;border-bottom:1px solid rgba(255,255,255,.04);vertic
 tr:hover td{background:rgba(255,255,255,.03)}
 .rag-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
 .blk-tag{background:#FAEEDA;color:#854F0B;font-size:10px;padding:1px 7px;border-radius:9px;font-weight:700;white-space:nowrap}
+.blk-link{text-decoration:none;display:inline-block}
+.blk-link:hover{background:#E8A93A;color:#0B1322;transform:scale(1.03)}
 .dim{opacity:.4}
 .trunc{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -631,26 +633,62 @@ function tally(arr,key){const m={};arr.forEach(r=>{const v=r[key]||'—';m[v]=(m
 
 function renderTypeChart(data){
   const t=tally(data,'btype');const labels=Object.keys(t).filter(k=>k!=='—');
+  const total=labels.reduce((s,l)=>s+t[l],0);
   mkChart('cType',{type:'doughnut',data:{labels,datasets:[{data:labels.map(l=>t[l]),backgroundColor:PAL,borderWidth:2,borderColor:'#18223A'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}}}}});
+    options:{responsive:true,maintainAspectRatio:false,plugins:{
+      legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}},
+      tooltip:{callbacks:{
+        title: ctx => ctx[0].label,
+        label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%)`
+      }}
+    }}});
 }
 function renderStatusChart(data){
   const s=tally(data,'status');
   const order=['Not Started','In Progress','On Hold','TBC','Removed'].concat(STATE.showComplete?['Complete']:[]);
   const sl=order.filter(x=>s[x]);
   mkChart('cStatus',{type:'bar',data:{labels:sl,datasets:[{data:sl.map(x=>s[x]),backgroundColor:'#4AA3E0',borderRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
+    options:{responsive:true,maintainAspectRatio:false,plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} build${ctx.raw===1?'':'s'}`}}
+    },scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
 }
 function renderRagChart(data){
   const rg=tally(data,'rag');const rO=['Red','Yellow','Green','Gray','—'];const rl=rO.filter(x=>rg[x]);
+  const total=rl.reduce((s,x)=>s+rg[x],0);
   mkChart('cRag',{type:'doughnut',data:{labels:rl,datasets:[{data:rl.map(x=>rg[x]),backgroundColor:rl.map(x=>RAGC[x==='—'?'':x]),borderWidth:2,borderColor:'#18223A'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}}}}});
+    options:{responsive:true,maintainAspectRatio:false,plugins:{
+      legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}},
+      tooltip:{callbacks:{
+        title: ctx => ctx[0].label + ' state',
+        label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%)`
+      }}
+    }}});
 }
 function renderBlockChart(data){
+  const PICKLIST = 'http://192.168.130.145:5000/picklists/';
+  const isPartsAvail = lbl => /parts/i.test(lbl);
   const bl=tally(data.filter(r=>r.blocker&&r.blocker!=='None'),'blocker');
   const bk=Object.keys(bl).sort((a,b)=>bl[b]-bl[a]);
-  mkChart('cBlock',{type:'bar',data:{labels:bk.length?bk:['(none)'],datasets:[{data:bk.length?bk.map(x=>bl[x]):[0],backgroundColor:'#E58C24',borderRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
+  const bgColors=bk.map(k=>isPartsAvail(k)?'#E24B4A':'#E58C24');
+  mkChart('cBlock',{type:'bar',data:{labels:bk.length?bk:['(none)'],datasets:[{data:bk.length?bk.map(x=>bl[x]):[0],backgroundColor:bk.length?bgColors:'#E58C24',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:ctx=>{
+          const n=ctx.raw, lbl=ctx.label;
+          const suffix = isPartsAvail(lbl) ? '  →  Click to open Pick List' : '';
+          return `${lbl}: ${n} build${n===1?'':'s'}${suffix}`;
+        }}}
+      },
+      onClick:(_,els)=>{
+        if(!els.length) return;
+        const lbl=bk[els[0].index];
+        if(isPartsAvail(lbl)) window.open(PICKLIST,'_blank');
+      },
+      onHover:(evt,els)=>{evt.native.target.style.cursor=els.length&&isPartsAvail(bk[els[0].index])?'pointer':'default';},
+      scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}
+    }});
 }
 
 function setFcPeriod(p,btn){STATE.fcPeriod=p;document.querySelectorAll('#tabLive .period-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderFcChart();}
@@ -693,7 +731,7 @@ function renderTable(data) {
       <td>${r.status||'—'}</td>
       <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
       <td>${r.priority||'—'}</td>
-      <td>${r.blocker&&r.blocker!=='None'?`<span class="blk-tag">${r.blocker}</span>`:'<span class="dim">—</span>'}</td>
+      <td>${r.blocker&&r.blocker!=='None'?(/parts/i.test(r.blocker)?`<a class="blk-tag blk-link" href="http://192.168.130.145:5000/picklists/" target="_blank" title="Open Pick List">${r.blocker} ↗</a>`:`<span class="blk-tag">${r.blocker}</span>`):'<span class="dim">—</span>'}</td>
       <td style="white-space:nowrap;color:#94A2BC">${r.golive||'—'}</td>
       <td class="trunc" title="${(r.comment||'').replace(/"/g,'&quot;')}">${r.comment||'—'}</td>
     </tr>`).join('');
