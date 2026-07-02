@@ -90,6 +90,23 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .blk-tag{background:#FAEEDA;color:#854F0B;font-size:10px;padding:1px 7px;border-radius:9px;font-weight:700;white-space:nowrap}
 .blk-link{text-decoration:none;display:inline-block}
 .blk-link:hover{background:#E8A93A;color:#0B1322;transform:scale(1.03)}
+
+/* ── Capacity planning grid ────────────────────────────────────────────────── */
+.cgrid{width:100%;border-collapse:collapse;font-size:11px;min-width:500px}
+.cgrid th{padding:6px 8px;color:#94A2BC;font-weight:600;border-bottom:1px solid #2A3858;white-space:nowrap;text-align:center}
+.cgrid-lbl{text-align:left!important;min-width:150px}
+.cgrid-wk{min-width:68px}
+.cgrid-team{padding:6px 8px 6px 10px;border-bottom:1px solid rgba(255,255,255,.05)}
+.cgrid-name{display:block;font-weight:700;color:#E8ECF3}
+.cgrid-default{display:block;font-size:9px;color:#94A2BC;margin-top:1px}
+.cgrid-cell{padding:4px 5px;text-align:center;border:1px solid rgba(255,255,255,.04);vertical-align:middle}
+.cgrid-over{background:rgba(226,75,74,.12)}
+.cgrid-custom{background:rgba(74,163,224,.08)}
+.cgrid-inp{width:54px;background:#1C2840;border:1px solid #2A3858;border-radius:4px;color:#E8ECF3;font-size:11px;font-weight:600;text-align:center;padding:3px 2px}
+.cgrid-inp:focus{border-color:#4AA3E0;outline:none}
+.cgrid-inp-mod{color:#4AA3E0;border-color:rgba(74,163,224,.5)}
+.cgrid-dem{font-size:9px;color:#94A2BC;margin-top:2px;white-space:nowrap}
+.cgrid-dem-over{color:#E24B4A;font-weight:700}
 .dim{opacity:.4}
 .trunc{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
@@ -169,7 +186,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 <nav class="nav">
   <div class="nav-brand">MFGFLOW</div>
   <div class="nav-tab active" onclick="showTab('live',this)">Live Builds</div>
-  <div class="nav-tab" onclick="showTab('forecast',this)">Forecast</div>
+  <div class="nav-tab" onclick="showTab('forecast',this)">Capacity by Team</div>
   <div class="nav-right">
     <span class="sync-info"><span class="sync-dot" id="syncDot"></span><span id="syncTxt">Not synced</span></span>
     <a class="btn btn-ghost btn-sm" href="http://192.168.130.145:5000/picklists/" target="_blank">📋 Pick List</a>
@@ -267,8 +284,8 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
   <div class="forecast-hd">
     <div>
-      <h2>Forecast by Team</h2>
-      <div class="sub">Demand per team from Smartsheet · <span id="fcBuildCount">—</span> active scheduled builds</div>
+      <h2>Capacity by Team</h2>
+      <div class="sub">Weekly capacity planner · <span id="fcBuildCount">—</span> active scheduled builds · demand driven from Smartsheet</div>
     </div>
     <!-- Hours / FTE toggle -->
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px;background:#1C2840;border:1px solid #2A3858;border-radius:8px;padding:3px">
@@ -284,6 +301,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <button class="btn btn-ghost btn-sm" onclick="openBuildHours()">✎ Edit Build Hours</button>
     <span id="capDragHint" style="font-size:11px;color:#94A2BC;display:none">↕ drag red line to set capacity</span>
     <button class="btn btn-danger btn-sm" id="resetCapBtn" style="display:none" onclick="resetCapacity()">Reset capacity</button>
+  </div>
+
+  <!-- Weekly Capacity Planning Grid -->
+  <div class="card" style="margin-bottom:22px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div>
+        <h3>Weekly Capacity Planner</h3>
+        <div class="card-sub" style="margin-bottom:0">Edit each cell to set a team's capacity for that week. <span style="color:#4AA3E0">Blue</span> = custom. <span style="color:#E24B4A">Red</span> = demand &gt; capacity.</div>
+      </div>
+      <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="resetTeamWeekCaps()">Reset all overrides</button>
+    </div>
+    <div class="scroll" id="capGridWrap"><div style="color:#94A2BC;font-size:12px;padding:8px">Sync from Smartsheet to populate the capacity grid.</div></div>
   </div>
 
   <!-- Total Factory Output chart -->
@@ -413,7 +442,8 @@ let STATE = {
   sortKey: 'name', sortAsc: true,
   fcPeriod: 'week',
   deptPeriod: 'week',
-  fcCapacity: LS.get('fcCapacity', null), // null = use computed totalCap()
+  fcCapacity: LS.get('fcCapacity', null),      // null = use computed totalCap()
+  teamWeekCaps: LS.get('teamWeekCaps', {}),    // {teamKey:YYYY-MM-DD: hours}
   displayUnit: LS.get('displayUnit', 'hours'), // 'hours' or 'fte'
   fcWindow: LS.get('fcWindow', 4),             // weeks to show in dept cards
   syncedAt: null,
@@ -574,6 +604,33 @@ function getWeekLabel(row, period) {
 function teamCap(team) { return team.people.reduce((s,p)=>s+p.cap,0); }
 function totalCap()    { return STATE.teams.reduce((s,t)=>s+teamCap(t),0); }
 
+// Per-team per-week capacity helpers
+function getTeamWeekCap(team, weekDate) {
+  if (!weekDate) return teamCap(team);
+  const iso = weekDate.toISOString().split('T')[0];
+  const stored = (STATE.teamWeekCaps || {})[`${team.key}:${iso}`];
+  return stored !== undefined ? stored : teamCap(team);
+}
+function totalCapForWeek(weekDate) {
+  return STATE.teams.reduce((s, t) => s + getTeamWeekCap(t, weekDate), 0);
+}
+function setTeamWeekCap(teamKey, iso, val) {
+  const n = parseInt(val);
+  if (isNaN(n) || n < 0) return;
+  if (!STATE.teamWeekCaps) STATE.teamWeekCaps = {};
+  STATE.teamWeekCaps[`${teamKey}:${iso}`] = n;
+  LS.set('teamWeekCaps', STATE.teamWeekCaps);
+  renderForecastTab();
+}
+function resetTeamWeekCaps() {
+  STATE.teamWeekCaps = {};
+  LS.set('teamWeekCaps', STATE.teamWeekCaps);
+  STATE.fcCapacity = null;
+  LS.set('fcCapacity', null);
+  renderForecastTab();
+  renderFcChart();
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CHART HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -620,10 +677,13 @@ function renderLiveBuilds() {
 function renderKPIs(data) {
   const today=new Date(); today.setHours(0,0,0,0);
   const in30=new Date(today); in30.setDate(in30.getDate()+30);
-  const tot=data.length, comp=data.filter(d=>d.status==='Complete').length;
+  const tot=data.length;
+  // Complete always counted from ALL builds (not filtered), so it's never 0
+  const comp=STATE.builds.filter(d=>d.status==='Complete').length;
+  const compPct=STATE.builds.length?Math.round(comp/STATE.builds.length*100):0;
   document.getElementById('kTotal').textContent=tot;
   document.getElementById('kComplete').textContent=comp;
-  document.getElementById('kPct').textContent=tot?Math.round(comp/tot*100)+'%':'';
+  document.getElementById('kPct').textContent=compPct+'%';
   document.getElementById('kRisk').textContent=data.filter(d=>d.rag==='Red'||d.rag==='Yellow').length;
   document.getElementById('kBlocked').textContent=data.filter(d=>d.blocker&&d.blocker!=='None').length;
   document.getElementById('kSoon').textContent=data.filter(d=>{if(!/^\d{4}/.test(d.golive))return false;const dt=new Date(d.golive);return dt>=today&&dt<=in30;}).length;
@@ -694,30 +754,40 @@ function renderBlockChart(data){
 function setFcPeriod(p,btn){STATE.fcPeriod=p;document.querySelectorAll('#tabLive .period-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderFcChart();}
 
 function renderFcChart(){
-  const fc=STATE.fc; if(!fc||!fc.weeks) return;
-  const wc_map=(p)=>{
-    if(p==='week') return {weeks:fc.weeks,cap:fc.cap,wc:fc.weeks.map(()=>1)};
-    const bw={},bc={},bn={},order=[];
-    const MAP={Jun:'Jun',Jul:'Jul',Aug:'Aug',Sep:'Sep',Oct:'Oct',Nov:'Nov',Dec:'Dec',Jan:'Jan'};
-    const QMAP={Jun:'Q3',Jul:'Q3',Aug:'Q3',Sep:'Q4',Oct:'Q4',Nov:'Q4',Dec:'Q1',Jan:'Q1'};
-    fc.weeks.forEach((w,i)=>{
-      const mon=w.w.split(' ')[1];
-      const key=p==='month'?(MAP[mon]||mon)+' '+((mon==='Jan')?'2027':'2026'):((QMAP[mon]||'Q?')+' '+((mon==='Jan')?'2027':'2026'));
-      if(!bw[key]){bw[key]={w:key,proj:{}};bc[key]=0;bn[key]=0;order.push(key);}
-      fc.projects.forEach(pr=>{bw[key].proj[pr]=(bw[key].proj[pr]||0)+((w.proj[pr])||0);});
-      bc[key]+=(fc.cap[i]||600);bn[key]++;
-    });
-    return {weeks:order.map(k=>bw[k]),cap:order.map(k=>bc[k]),wc:order.map(k=>bn[k])};
-  };
-  const {weeks,cap:rawCap,wc}=wc_map(STATE.fcPeriod);
-  const colorOf={}; fc.projects.forEach((p,i)=>colorOf[p]=PAL[i%PAL.length]);
-  const ds=fc.projects.map(p=>({label:p,type:'bar',data:weeks.map((w,i)=>+((w.proj[p]||0)/(HRS*(wc[i]||1))).toFixed(1)),backgroundColor:colorOf[p],stack:'h',borderWidth:0}));
-  const capFte=rawCap.map((v,i)=>+((v/(HRS*(wc[i]||1))).toFixed(1)));
-  ds.push({label:'Capacity',type:'line',data:capFte,borderColor:'#E2574F',borderWidth:2.5,stepped:true,pointRadius:3,pointBackgroundColor:'#E2574F',fill:false,order:0});
-  document.getElementById('fcLegend').innerHTML=fc.projects.map(p=>`<span><span class="lsw" style="background:${colorOf[p]}"></span>${p}</span>`).join('')+`<span style="font-weight:700"><span class="lln"></span>Capacity</span>`;
-  mkChart('cFc',{type:'bar',data:{labels:weeks.map(w=>w.w),datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+  if(!STATE.scheduleBuilds.length){
+    document.getElementById('fcLegend').innerHTML='<span style="color:#94A2BC;font-size:11px">Sync from Smartsheet to see team demand forecast</span>';
+    if(charts['cFc'])charts['cFc'].destroy();
+    return;
+  }
+  const allWeeks = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
+  const todayMonday = getMonday(new Date());
+  const futureWeeks = allWeeks.filter(w => w.weekDate >= todayMonday);
+  const raw = aggregateWeekData(futureWeeks, STATE.fcPeriod);
+  if(!raw.length) return;
+  const labels = raw.map(w => STATE.fcPeriod==='week' ? fmtWeek(w.weekDate) : w._label);
+  const ds = STATE.teams.map(t => ({
+    label:t.name, type:'bar',
+    data:raw.map(w => +((w[t.key]||0)/HRS).toFixed(1)),
+    backgroundColor:t.color, stack:'h', borderWidth:0,
+  }));
+  // Capacity per period: sum of per-week caps (or factory override), scaled to FTEs
+  const capFte = raw.map(w => {
+    const wkCount = w._count || 1;
+    const base = STATE.fcCapacity !== null ? STATE.fcCapacity : totalCapForWeek(w.weekDate);
+    return +((base * wkCount) / HRS).toFixed(1);
+  });
+  ds.push({label:'Capacity',type:'line',data:capFte,borderColor:'#E2574F',borderDash:[6,4],borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#E2574F',fill:false,order:0});
+  document.getElementById('fcLegend').innerHTML =
+    STATE.teams.map(t=>`<span><span class="lsw" style="background:${t.color}"></span>${t.name}</span>`).join('') +
+    `<span style="font-weight:700"><span class="lln"></span>Capacity</span>`;
+  mkChart('cFc',{type:'bar',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+      if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw} FTEs (${Math.round(ctx.raw*HRS)}h)`;
+      return `${ctx.dataset.label}: ${ctx.raw} FTEs`;
+    }}}},
     scales:{x:{stacked:true,grid:{display:false},ticks:{...darkTicks,maxRotation:45,minRotation:45}},
-      y:{stacked:true,title:{display:true,text:'FTEs (6h day)',color:'#94A2BC',font:{size:11}},grid:darkGrid,ticks:{...darkTicks,precision:1}}}}});
+      y:{stacked:true,title:{display:true,text:'FTEs (30h/wk)',color:'#94A2BC',font:{size:11}},grid:darkGrid,ticks:{...darkTicks,precision:1}}}
+  }});
 }
 
 function renderTable(data) {
@@ -771,20 +841,29 @@ function renderForecastTab() {
   document.getElementById('btnUnitFte').classList.toggle('active', STATE.displayUnit==='fte');
   document.querySelectorAll('.win-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.w)===STATE.fcWindow));
   updateCapInfo();
+  renderCapacityGrid(futureWeeks);
   renderFactoryChart(futureWeeks);
   renderDeptCards(futureWeeks);
 }
 
 function updateCapInfo() {
-  const computed = totalCap();
   const overridden = STATE.fcCapacity !== null;
-  const displayHrs = overridden ? STATE.fcCapacity : computed;
+  const hasCustomWeek = Object.keys(STATE.teamWeekCaps || {}).length > 0;
   const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
-  const capDisp = +(displayHrs / div).toFixed(1);
   const suffix = STATE.displayUnit === 'fte' ? ' FTEs/week' : 'h/week';
-  document.getElementById('totalCapInfo').textContent =
-    `Total capacity: ${capDisp}${suffix}${overridden ? ' (manually set — drag red line to adjust)' : ` across ${STATE.teams.length} teams`}.`;
-  document.getElementById('resetCapBtn').style.display = overridden ? '' : 'none';
+  if (overridden) {
+    const capDisp = +(STATE.fcCapacity / div).toFixed(1);
+    document.getElementById('totalCapInfo').textContent =
+      `Total capacity: ${capDisp}${suffix} (factory override — drag red line to adjust).`;
+  } else if (hasCustomWeek) {
+    document.getElementById('totalCapInfo').textContent =
+      `Capacity varies by team and week (custom overrides active — see grid above).`;
+  } else {
+    const capDisp = +(totalCap() / div).toFixed(1);
+    document.getElementById('totalCapInfo').textContent =
+      `Total capacity: ${capDisp}${suffix} (from team headcount · edit in grid above or drag red line).`;
+  }
+  document.getElementById('resetCapBtn').style.display = (overridden || hasCustomWeek) ? '' : 'none';
   document.getElementById('capDragHint').style.display = overridden ? 'none' : '';
 }
 
@@ -794,14 +873,69 @@ function resetCapacity() {
   renderForecastTab();
 }
 
+function renderCapacityGrid(weeks) {
+  const el = document.getElementById('capGridWrap');
+  if (!el) return;
+  const slice = weeks.slice(0, STATE.fcWindow);
+  if (!slice.length) {
+    el.innerHTML = '<div style="color:#94A2BC;font-size:12px;padding:8px">No upcoming weeks found — check Smartsheet sync.</div>';
+    return;
+  }
+  const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
+  const unitSfx = STATE.displayUnit === 'fte' ? ' FTE' : 'h';
+  const step = STATE.displayUnit === 'fte' ? 1 : 5;
+
+  let html = `<table class="cgrid">
+    <thead><tr>
+      <th class="cgrid-lbl">Team</th>
+      ${slice.map(w => `<th class="cgrid-wk">${fmtWeek(w.weekDate)}</th>`).join('')}
+    </tr></thead>
+    <tbody>`;
+
+  STATE.teams.forEach(t => {
+    const def = Math.round(teamCap(t) / div);
+    html += `<tr>
+      <td class="cgrid-team" style="border-left:3px solid ${t.color}">
+        <span class="cgrid-name">${t.name}</span>
+        <span class="cgrid-default">default: ${def}${unitSfx}/wk</span>
+      </td>`;
+    slice.forEach(w => {
+      const iso = w.weekDate.toISOString().split('T')[0];
+      const k = `${t.key}:${iso}`;
+      const hasOverride = (STATE.teamWeekCaps || {})[k] !== undefined;
+      const capVal = Math.round(getTeamWeekCap(t, w.weekDate) / div);
+      const demand = Math.round((w[t.key] || 0) / div);
+      const over = demand > capVal;
+      html += `<td class="cgrid-cell${over ? ' cgrid-over' : ''}${hasOverride ? ' cgrid-custom' : ''}">
+        <input type="number" class="cgrid-inp${hasOverride ? ' cgrid-inp-mod' : ''}"
+          value="${capVal}" min="0" step="${step}"
+          onchange="setTeamWeekCap('${t.key}','${iso}',Math.round(+this.value*${div}))"
+          title="${hasOverride ? 'Custom override (modifying updates chart instantly)' : 'Default from team headcount'}">
+        <div class="cgrid-dem${over ? ' cgrid-dem-over' : ''}">↓ ${demand}${unitSfx}</div>
+      </td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
 function renderFactoryChart(data) {
   const labels = data.map(d => fmtWeek(d.weekDate));
   const wc = data.map(() => 1);
-  const baseCap = STATE.fcCapacity !== null ? STATE.fcCapacity : totalCap();
   const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
   const unitLbl = STATE.displayUnit === 'fte' ? 'FTEs' : 'Hours';
-  const capDisp = +(baseCap / div).toFixed(1);
   const capSufx = STATE.displayUnit === 'fte' ? ' FTEs/wk' : 'h/wk';
+
+  // Per-week capacity: factory override (drag) trumps per-team-week settings
+  const capData = data.map(w => {
+    const base = STATE.fcCapacity !== null ? STATE.fcCapacity : totalCapForWeek(w.weekDate);
+    return +(base / div).toFixed(1);
+  });
+  // First-week value for the legend (or show "varies")
+  const allSame = capData.every(v => v === capData[0]);
+  const capLegendVal = allSame ? `${capData[0]}${capSufx}` : `varies${STATE.fcCapacity !== null ? ` (override: ${capData[0]}${capSufx})` : ''}`;
 
   const ds = STATE.teams.map(t => ({
     label: t.name, type: 'bar',
@@ -810,7 +944,7 @@ function renderFactoryChart(data) {
   }));
   ds.push({
     label:'Capacity', type:'line',
-    data: data.map(() => capDisp),
+    data: capData,
     borderColor:'#E2574F', borderDash:[6,4], borderWidth:3,
     pointRadius:6, pointBackgroundColor:'#E2574F', pointHoverRadius:9,
     fill:false, order:0
@@ -818,7 +952,7 @@ function renderFactoryChart(data) {
 
   document.getElementById('deptLegend').innerHTML =
     STATE.teams.map(t => `<span><span class="lsw" style="background:${t.color}"></span>${t.name}</span>`).join('') +
-    `<span style="font-weight:700"><span class="lln"></span>Capacity (${capDisp}${capSufx} — drag to adjust)</span>`;
+    `<span style="font-weight:700"><span class="lln"></span>Capacity (${capLegendVal}${STATE.fcCapacity !== null ? ' — drag to adjust' : ' — set in grid above'})</span>`;
 
   mkChart('cFactory', {type:'bar', data:{labels, datasets:ds}, options:{
     responsive:true, maintainAspectRatio:false,
@@ -920,9 +1054,13 @@ function attachCapacityDrag(chartId, data, wc) {
     if (labelEl) { labelEl.remove(); labelEl = null; }
     document.getElementById('resetCapBtn').style.display = '';
     document.getElementById('capDragHint').style.display = 'none';
-    // Full re-render to sync dept cards
+    // Full re-render to sync dept cards and grid
     const weekData = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
-    renderDeptCards(aggregateWeekData(weekData, STATE.deptPeriod));
+    const todayMonday = getMonday(new Date());
+    const futureWks = weekData.filter(w => w.weekDate >= todayMonday);
+    renderDeptCards(futureWks);
+    renderCapacityGrid(futureWks);
+    renderFcChart();
     updateCapInfo();
   }
 
@@ -950,10 +1088,10 @@ function renderDeptCards(data) {
   grid.innerHTML = '';
 
   STATE.teams.forEach((t,ti) => {
-    const capHrs = teamCap(t);
-    const capDisp = +(capHrs / div).toFixed(1);
+    // Per-week capacity for this team
+    const capLine = slice.map(w => +(getTeamWeekCap(t, w.weekDate) / div).toFixed(1));
+    const capDispFirst = capLine[0] ?? +(teamCap(t)/div).toFixed(1); // for header display
     const demand = slice.map(d => +((d[t.key]||0) / div).toFixed(1));
-    const capLine = slice.map(() => capDisp);
     const bgColors = demand.map((v,i) => v > capLine[i] ? '#E24B4A' : t.color);
 
     const card = document.createElement('div');
@@ -963,7 +1101,7 @@ function renderDeptCards(data) {
 
     const pills = slice.map((d,i) => {
       const dem = (d[t.key]||0) / div;
-      const c = capDisp;
+      const c = capLine[i];
       const diff = +(dem - c).toFixed(1);
       return dem > c
         ? `<span class="pill pill-over">+${Math.abs(diff)}${unitSfx}</span>`
@@ -975,7 +1113,7 @@ function renderDeptCards(data) {
         <input class="dept-name-input" value="${t.name}" onchange="updateTeamName(${ti},this.value)" style="background:transparent;border:none;border-bottom:1px dashed #4AA3E0;color:#E8ECF3;font-size:14px;font-weight:700;width:160px">
         <div class="cap-edit">
           <label>Cap/wk</label>
-          <input class="cap-input" type="number" value="${capDisp}" title="Total = sum of people below" readonly tabindex="-1" style="color:#94A2BC">
+          <input class="cap-input" type="number" value="${capDispFirst}" title="Set per-week in the capacity grid above" readonly tabindex="-1" style="color:#94A2BC">
           <span style="font-size:10px;color:#94A2BC">${unitSfx}</span>
         </div>
       </div>
