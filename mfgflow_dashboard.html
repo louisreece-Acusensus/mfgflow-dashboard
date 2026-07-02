@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MFGFLOW Production Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ── Reset & base ──────────────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0B1322;color:#E8ECF3;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;min-height:100vh}
+button,input,select{font-family:inherit}
+input:focus,select:focus{outline:none}
+
+/* ── Nav ───────────────────────────────────────────────────────────────────── */
+.nav{background:#0B1322;border-bottom:1px solid #2A3858;height:46px;display:flex;align-items:center;padding:0 24px;gap:0;position:sticky;top:0;z-index:100}
+.nav-brand{font-size:13px;font-weight:800;letter-spacing:2px;color:#4AA3E0;text-transform:uppercase;margin-right:20px}
+.nav-tab{height:46px;padding:0 16px;display:flex;align-items:center;font-size:12px;color:#94A2BC;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s}
+.nav-tab:hover{color:#E8ECF3}
+.nav-tab.active{color:#4AA3E0;border-bottom-color:#4AA3E0;font-weight:600}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{padding:5px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid;transition:all .15s;white-space:nowrap}
+.btn-blue{background:#4AA3E0;color:#0B1322;border-color:#4AA3E0}
+.btn-blue:hover{filter:brightness(1.1)}
+.btn-ghost{background:transparent;color:#94A2BC;border-color:#2A3858}
+.btn-ghost:hover{color:#E8ECF3;border-color:#4AA3E0}
+.btn-sm{padding:3px 10px;font-size:11px}
+.btn-danger{background:transparent;color:#E24B4A;border-color:#E24B4A}
+.btn-danger:hover{background:#E24B4A;color:#fff}
+.sync-info{font-size:11px;color:#94A2BC}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#639922;display:inline-block;margin-right:5px}
+.sync-dot.stale{background:#EF9F27}
+.sync-dot.error{background:#E24B4A}
+.sync-dot.loading{background:#4AA3E0;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── Page layout ───────────────────────────────────────────────────────────── */
+.tab-panel{display:none;padding:22px 24px;max-width:1380px;margin:0 auto}
+.tab-panel.active{display:block}
+
+/* ── Status bar ────────────────────────────────────────────────────────────── */
+.status-bar{background:#18223A;border:1px solid #2A3858;border-radius:10px;padding:12px 18px;display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.status-bar .label{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600}
+.status-val{font-size:13px;color:#E8ECF3}
+
+/* ── Filters (Live Builds) ─────────────────────────────────────────────────── */
+.filters-bar{background:#18223A;border:1px solid #2A3858;border-radius:10px;padding:14px 18px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:20px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600}
+.fg select,.fg input[type=text]{background:#1C2840;border:1px solid #2A3858;border-radius:6px;padding:5px 10px;font-size:12px;color:#E8ECF3}
+.fg select:focus{border-color:#4AA3E0}
+.fa{margin-left:auto;display:flex;gap:8px;align-items:flex-end}
+.btn-toggle{padding:5px 12px;border-radius:6px;border:1px solid #2A3858;font-size:12px;font-weight:600;color:#94A2BC;background:transparent;cursor:pointer;transition:all .15s}
+.btn-toggle.on{background:#7ED957;color:#0B1322;border-color:#7ED957}
+
+/* ── KPI row ───────────────────────────────────────────────────────────────── */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
+.kpi{background:#1C2840;border:1px solid #2A3858;border-left:4px solid;border-radius:10px;padding:14px 16px}
+.kpi-val{font-size:28px;font-weight:400;color:#fff;line-height:1}
+.kpi-lbl{font-size:11px;color:#94A2BC;margin-bottom:2px}
+.kpi-sub{font-size:11px;color:#94A2BC;margin-top:3px}
+
+/* ── Chart grid ─────────────────────────────────────────────────────────────── */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px}
+.card{background:#18223A;border:1px solid #2A3858;border-radius:12px;padding:18px}
+.card h3{font-size:14px;font-weight:500;color:#E8ECF3;margin-bottom:2px}
+.card-sub{font-size:11px;color:#94A2BC;margin-bottom:14px}
+.ch260{height:260px;position:relative}
+.ch300{height:300px;position:relative}
+.ch340{height:340px;position:relative;min-width:900px}
+.scroll{overflow-x:auto}
+
+/* ── Forecast chart header ─────────────────────────────────────────────────── */
+.fc-hd{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.period-grp{display:flex;gap:6px}
+.period-btn{padding:3px 12px;border-radius:6px;border:1px solid #2A3858;font-size:11px;font-weight:600;color:#94A2BC;background:transparent;cursor:pointer;transition:all .15s}
+.period-btn.active{background:#4AA3E0;color:#0B1322;border-color:#4AA3E0}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#C9D4E5;margin-bottom:12px}
+.lsw{width:11px;height:11px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+.lln{width:18px;height:0;border-top:2.5px solid #E2574F;display:inline-block;margin-right:4px;vertical-align:middle}
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+.tbl-wrap{overflow-x:auto;margin-top:14px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{color:#94A2BC;font-weight:600;border-bottom:1px solid #2A3858;padding:0 14px 10px 0;cursor:pointer;white-space:nowrap;text-align:left}
+th:hover{color:#E8ECF3}
+td{padding:10px 14px 10px 0;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+tr:hover td{background:rgba(255,255,255,.03)}
+.rag-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
+.blk-tag{background:#FAEEDA;color:#854F0B;font-size:10px;padding:1px 7px;border-radius:9px;font-weight:700;white-space:nowrap}
+.dim{opacity:.4}
+.trunc{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ── Forecast tab (light-on-dark dept cards) ─────────────────────────────────── */
+#tabForecast{background:#0E1626}
+.forecast-hd{display:flex;align-items:flex-end;margin-bottom:20px;gap:14px;flex-wrap:wrap}
+.forecast-hd h2{font-size:17px;font-weight:500;color:#E8ECF3}
+.forecast-hd .sub{font-size:12px;color:#94A2BC;margin-top:2px}
+
+.dept-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;margin-top:24px}
+.dept-card{background:#18223A;border:1px solid #2A3858;border-top:4px solid;border-radius:12px;padding:18px}
+.dept-hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px}
+.dept-name{font-size:14px;font-weight:700;color:#E8ECF3;cursor:pointer;border-bottom:1px dashed transparent;transition:.15s}
+.dept-name:hover{border-bottom-color:#4AA3E0;color:#4AA3E0}
+.dept-name-input{font-size:14px;font-weight:700;background:transparent;border:none;border-bottom:1px solid #4AA3E0;color:#4AA3E0;width:140px}
+.cap-edit{display:flex;align-items:center;gap:4px;background:#1C2840;border:1px solid #2A3858;border-radius:6px;padding:2px 8px}
+.cap-edit label{font-size:10px;color:#94A2BC;white-space:nowrap}
+.cap-input{width:48px;background:transparent;border:none;color:#4AA3E0;font-size:12px;font-weight:700;text-align:right}
+.cap-input:focus{outline:1px solid #4AA3E0;border-radius:3px}
+.dept-lead{font-size:11px;color:#94A2BC;margin-bottom:14px}
+.dept-ch{height:120px;position:relative;margin-bottom:10px}
+.week-pills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px}
+.pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px}
+.pill-ok{background:rgba(99,153,34,.2);color:#7ED957}
+.pill-over{background:rgba(226,75,74,.2);color:#E24B4A}
+
+/* ── People list ─────────────────────────────────────────────────────────────── */
+.people-hd{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #2A3858;padding-top:10px;margin-top:4px}
+.people-hd span{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600}
+.person-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.person-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0}
+.person-name-edit{font-size:12px;font-weight:600;color:#E8ECF3;background:transparent;border:none;border-bottom:1px dashed transparent;transition:.15s;width:100%}
+.person-name-edit:hover{border-bottom-color:#4AA3E0;cursor:text}
+.person-name-edit:focus{border-bottom-color:#4AA3E0;outline:none;color:#4AA3E0}
+.person-cap-edit{width:38px;background:#1C2840;border:1px solid #2A3858;border-radius:4px;color:#94A2BC;font-size:11px;text-align:right;padding:1px 4px}
+.person-cap-edit:focus{border-color:#4AA3E0;color:#4AA3E0}
+.add-person-btn{font-size:11px;color:#4AA3E0;background:transparent;border:none;cursor:pointer;padding:4px 0;width:100%;text-align:left;margin-top:4px}
+.add-person-btn:hover{opacity:.8}
+.del-person{background:transparent;border:none;color:#E24B4A;font-size:13px;cursor:pointer;opacity:.5;padding:0 2px;flex-shrink:0}
+.del-person:hover{opacity:1}
+
+/* ── Settings modal ─────────────────────────────────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:#18223A;border:1px solid #2A3858;border-radius:14px;padding:28px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:16px;font-weight:600;color:#E8ECF3;margin-bottom:6px}
+.modal-sub{font-size:12px;color:#94A2BC;margin-bottom:22px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600;margin-bottom:6px}
+.form-group input[type=text],.form-group input[type=password]{width:100%;background:#1C2840;border:1px solid #2A3858;border-radius:7px;padding:8px 12px;font-size:13px;color:#E8ECF3;transition:.15s}
+.form-group input:focus{border-color:#4AA3E0}
+.form-group .hint{font-size:11px;color:#94A2BC;margin-top:4px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
+.msg-box{padding:10px 14px;border-radius:8px;font-size:12px;margin-top:12px;display:none}
+.msg-box.ok{background:rgba(99,153,34,.15);border:1px solid #639922;color:#7ED957}
+.msg-box.err{background:rgba(226,75,74,.15);border:1px solid #E24B4A;color:#E24B4A}
+
+/* ── Build hours edit modal ─────────────────────────────────────────────────── */
+.lookup-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:10px}
+.lookup-table th{background:#1C2840;color:#94A2BC;padding:6px 8px;border:1px solid #2A3858;text-align:center;white-space:nowrap}
+.lookup-table td{border:1px solid #2A3858;padding:3px 4px;text-align:center}
+.lookup-table input{width:50px;background:transparent;border:none;color:#4AA3E0;font-size:11px;text-align:center}
+.lookup-table input:focus{background:#1C2840;outline:1px solid #4AA3E0;border-radius:2px}
+.lookup-table .row-label{text-align:left;color:#C9D4E5;padding:4px 8px;font-weight:600;background:#1C2840}
+
+/* ── Loading overlay ─────────────────────────────────────────────────────────── */
+.loading-overlay{position:fixed;inset:0;background:rgba(11,19,34,.8);z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+.loading-overlay.show{display:flex}
+.spinner{width:36px;height:36px;border:3px solid #2A3858;border-top-color:#4AA3E0;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-txt{color:#94A2BC;font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- ── Nav ──────────────────────────────────────────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-brand">MFGFLOW</div>
+  <div class="nav-tab active" onclick="showTab('live',this)">Live Builds</div>
+  <div class="nav-tab" onclick="showTab('forecast',this)">Forecast</div>
+  <div class="nav-right">
+    <span class="sync-info"><span class="sync-dot" id="syncDot"></span><span id="syncTxt">Not synced</span></span>
+    <a class="btn btn-ghost btn-sm" href="http://192.168.130.145:5000/picklists/" target="_blank">📋 Pick List</a>
+    <button class="btn btn-blue btn-sm" onclick="refresh()">⟳ Refresh</button>
+    <button class="btn btn-ghost btn-sm" onclick="openSettings()">⚙ Settings</button>
+  </div>
+</nav>
+
+<!-- ── Loading overlay ─────────────────────────────────────────────────────── -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-txt" id="loadingTxt">Fetching from Smartsheet…</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB 1: LIVE BUILDS
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tabLive">
+
+  <div class="filters-bar">
+    <div class="fg"><label>Build type</label><select id="fBtype" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>MFG / Opp</label><select id="fMfg" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>Status</label><select id="fStatus" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>RAG</label><select id="fRag" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fa">
+      <button class="btn btn-blue btn-sm" onclick="resetFilters()">Reset</button>
+      <button class="btn-toggle" id="showCompleteBtn" onclick="toggleComplete()">Show complete</button>
+    </div>
+    <div class="fa" style="margin-left:8px">
+      <span id="buildCount" style="font-size:12px;color:#94A2BC"></span>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi" style="border-left-color:#D9D9CD"><div class="kpi-lbl">Total builds</div><div class="kpi-val" id="kTotal">—</div></div>
+    <div class="kpi" style="border-left-color:#7ED957"><div class="kpi-lbl">Complete</div><div class="kpi-val" id="kComplete">—</div><div class="kpi-sub" id="kPct">—</div></div>
+    <div class="kpi" style="border-left-color:#E2574F"><div class="kpi-lbl">At risk (R+A)</div><div class="kpi-val" id="kRisk">—</div></div>
+    <div class="kpi" style="border-left-color:#E58C24"><div class="kpi-lbl">Blocked</div><div class="kpi-val" id="kBlocked">—</div></div>
+    <div class="kpi" style="border-left-color:#4AA3E0"><div class="kpi-lbl">Go-live ≤ 30 days</div><div class="kpi-val" id="kSoon">—</div></div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="grid2">
+    <div class="card"><h3>Builds by type</h3><div class="card-sub">Distribution of build types</div><div class="ch260"><canvas id="cType"></canvas></div></div>
+    <div class="card"><h3>Build status</h3><div class="card-sub">Status distribution</div><div class="ch260"><canvas id="cStatus"></canvas></div></div>
+  </div>
+
+  <!-- Charts row 2 -->
+  <div class="grid2">
+    <div class="card"><h3>Schedule health (RAG)</h3><div class="card-sub">Overall project health</div><div class="ch260"><canvas id="cRag"></canvas></div></div>
+    <div class="card"><h3>Primary blockers</h3><div class="card-sub">Active blocker types</div><div class="ch260"><canvas id="cBlock"></canvas></div></div>
+  </div>
+
+  <!-- Forecast FTEs -->
+  <div class="card" style="margin-bottom:20px">
+    <div class="fc-hd">
+      <div><h3>Forecast FTEs by project</h3><div class="card-sub" style="margin-bottom:0">Committed FTEs stacked by project · capacity line = red</div></div>
+      <div class="period-grp" style="margin-left:auto">
+        <button class="period-btn active" onclick="setFcPeriod('week',this)">Week</button>
+        <button class="period-btn" onclick="setFcPeriod('month',this)">Month</button>
+        <button class="period-btn" onclick="setFcPeriod('quarter',this)">Quarter</button>
+      </div>
+    </div>
+    <div class="legend" id="fcLegend"></div>
+    <div class="scroll"><div class="ch340"><canvas id="cFc"></canvas></div></div>
+  </div>
+
+  <!-- Builds table -->
+  <div class="card">
+    <h3 id="tableTitle">Builds</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortBy('name')">Build <span id="s_name"></span></th>
+          <th onclick="sortBy('btype')">Type <span id="s_btype"></span></th>
+          <th onclick="sortBy('mfg')">MFG/Opp <span id="s_mfg"></span></th>
+          <th onclick="sortBy('status')">Status <span id="s_status"></span></th>
+          <th onclick="sortBy('rag')">RAG <span id="s_rag"></span></th>
+          <th onclick="sortBy('priority')">Priority <span id="s_priority"></span></th>
+          <th onclick="sortBy('blocker')">Blocker <span id="s_blocker"></span></th>
+          <th onclick="sortBy('golive')">Go-live <span id="s_golive"></span></th>
+          <th>Latest comment</th>
+        </tr></thead>
+        <tbody id="tBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB 2: FORECAST
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabForecast">
+
+  <div class="forecast-hd">
+    <div>
+      <h2>Forecast by Team</h2>
+      <div class="sub">Hours demand per department · computed from Build Type time studies · <span id="fcBuildCount">—</span> active scheduled builds</div>
+    </div>
+    <div class="period-grp" style="margin-left:auto">
+      <button class="period-btn active" onclick="setDeptPeriod('week',this)">Weeks</button>
+      <button class="period-btn" onclick="setDeptPeriod('month',this)">Months</button>
+      <button class="period-btn" onclick="setDeptPeriod('quarter',this)">Quarters</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="openBuildHours()">✎ Edit Build Hours</button>
+    <span id="capDragHint" style="font-size:11px;color:#94A2BC;display:none">↕ drag red line to set capacity</span>
+    <button class="btn btn-danger btn-sm" id="resetCapBtn" style="display:none" onclick="resetCapacity()">Reset capacity</button>
+  </div>
+
+  <!-- Total Factory Output chart -->
+  <div class="card" style="margin-bottom:22px">
+    <h3>Total Factory Output</h3>
+    <div class="card-sub">Aggregate hours demand vs total capacity. <span id="totalCapInfo"></span></div>
+    <div class="legend" id="deptLegend"></div>
+    <div class="scroll"><div class="ch340"><canvas id="cFactory"></canvas></div></div>
+  </div>
+
+  <!-- Dept cards -->
+  <div class="dept-grid" id="deptGrid"></div>
+
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     SETTINGS MODAL
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal">
+    <h2>⚙ Settings</h2>
+    <div class="modal-sub">Connect to Smartsheet · changes saved locally in your browser</div>
+    <div class="form-group">
+      <label>Smartsheet API key</label>
+      <input type="password" id="apiKeyInput" placeholder="Paste your API key…">
+      <div class="hint">Generate at app.smartsheet.com → Account → Apps & Integrations → API Access</div>
+    </div>
+    <div class="form-group">
+      <label>Production Schedule Sheet ID</label>
+      <input type="text" id="sheetMainInput" placeholder="e.g. 6805949508439940">
+      <div class="hint">Numeric ID from Smartsheet URL. Pre-filled from your session.</div>
+    </div>
+    <div class="form-group">
+      <label>Build Type Hours Lookup Sheet ID</label>
+      <input type="text" id="sheetLookupInput" placeholder="e.g. 2372330635349892">
+      <div class="hint">Project Schedule Inputs &amp; Vars sheet. Pre-filled from your session.</div>
+    </div>
+    <div class="msg-box" id="settingsMsg"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-ghost" onclick="testConnection()">Test connection</button>
+      <button class="btn btn-blue" onclick="saveSettings()">Save &amp; Refresh</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     BUILD HOURS EDIT MODAL
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="hoursOverlay">
+  <div class="modal" style="width:750px;max-width:98vw">
+    <h2>✎ Build Type Hours per Team</h2>
+    <div class="modal-sub">Hours each team contributes per unit of each build type. Edit any cell and click Save.</div>
+    <div style="overflow-x:auto"><table class="lookup-table" id="lookupEditTable"></table></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeHours()">Cancel</button>
+      <button class="btn btn-blue" onclick="saveBuildHours()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS & DEFAULTS
+// ═══════════════════════════════════════════════════════════════════════════════
+const SHEET_MAIN   = '6805949508439940';
+const SHEET_LOOKUP = '2372330635349892';
+const HRS          = 30; // hrs per FTE per week (6h/day × 5 days)
+
+const RAGC = {Red:'#E24B4A',Yellow:'#EF9F27',Green:'#639922',Gray:'#B8B5AC','':'#D9D9CD'};
+const PAL  = ['#4AA3E0','#8B7FE8','#3FC1C9','#5BD1A6','#7ED957','#C0E862','#6C8CE0','#36D6D0','#A9CBE3','#E58C24','#F4C77E'];
+const BPAL = ['#4AA3E0','#8B7FE8','#E58C24','#3FC1C9','#7ED957','#F0A93A','#A9CBE3','#E2574F','#C0E862','#8593AD'];
+const AV_COLORS = ['#E24B4A','#4AA3E0','#8B7FE8','#E58C24','#3FC1C9','#5BD1A6','#7ED957','#F0A93A'];
+
+const DEFAULT_LOOKUP = {
+  'Bi-di Trailer Upgrade': {Andy:31.0, Mahmood:32.5, Hayley:25.96, Vinay:22.5, Alfredo:7.6, Asif:0, FAT:10, Dwight:50},
+  'EBO MPDC AIO':          {Andy:110,  Mahmood:40,   Hayley:50.25, Vinay:50,   Alfredo:20,  Asif:0, FAT:10, Dwight:0},
+  'EBO MPDC DJ1':          {Andy:110,  Mahmood:40,   Hayley:25.12, Vinay:30,   Alfredo:10,  Asif:0, FAT:10, Dwight:0},
+  'Fixed Site - DJ1':      {Andy:0,    Mahmood:0,    Hayley:8.37,  Vinay:10,   Alfredo:10,  Asif:8, FAT:28, Dwight:0},
+  'MSCar':                 {Andy:0,    Mahmood:0,    Hayley:12,    Vinay:0,    Alfredo:0,   Asif:0, FAT:10, Dwight:116},
+  'Red Light':             {Andy:0,    Mahmood:0,    Hayley:12.555,Vinay:15,   Alfredo:15,  Asif:12,FAT:42, Dwight:0},
+  'Speed':                 {Andy:110,  Mahmood:20,   Hayley:25,    Vinay:20,   Alfredo:10,  Asif:0, FAT:10, Dwight:0},
+};
+
+const DEFAULT_TEAMS = [
+  {key:'Andy',    name:'Base Builds / Trailer', lead:'Andy Le',     color:'#4AA3E0',
+   people:[{name:'Andy Le',cap:50,initials:'AL'}]},
+  {key:'Mahmood', name:'Boom',                  lead:'Mahmood S',   color:'#8B7FE8',
+   people:[{name:'Mahmood S',cap:50,initials:'MS'},{name:'Raph N',cap:50,initials:'RN'},{name:'Tevin C',cap:38,initials:'TC'},{name:'Ysabelle F',cap:40,initials:'YF'}]},
+  {key:'Hayley',  name:'Camera Assembly',       lead:'Hayley C',    color:'#3FC1C9',
+   people:[{name:'Andy Le',cap:50,initials:'AL'},{name:'Hayley C',cap:24,initials:'HC'}]},
+  {key:'Vinay',   name:'Abox / RUTs Setup',     lead:'Vinnay G',    color:'#5BD1A6',
+   people:[{name:'Vinnay G',cap:40,initials:'VG'}]},
+  {key:'Alfredo', name:'Electrical / Gear Plate',lead:'Alfredo T',  color:'#7ED957',
+   people:[{name:'Alfredo T',cap:50,initials:'AT'},{name:'Darius T',cap:50,initials:'DT'}]},
+  {key:'Asif',    name:'Picking',               lead:'Asif',        color:'#C0E862',
+   people:[{name:'Asif',cap:40,initials:'AS'}]},
+  {key:'FAT',     name:'FAT (All Teams)',        lead:'All Teams',   color:'#E58C24',
+   people:[{name:'All Teams (FAT)',cap:120,initials:'FA'}]},
+  {key:'Dwight',  name:'Car Mechanical',        lead:'Dwight D',    color:'#6C8CE0',
+   people:[{name:'Dwight D',cap:50,initials:'DD'},{name:'Ron C',cap:50,initials:'RC'},{name:'Marty T',cap:15,initials:'MT'},{name:'Glenn A',cap:40,initials:'GA'}]},
+];
+
+// Hardcoded FC/historical data from MFGFLOW component (fallback when no API)
+const FALLBACK_FC = {"weeks":[{"w":"15 Jun","proj":{"NSW Bidi":76,"NSW Fixed Sites":33,"Gen 3.1":3,"NSW MSC Build":95,"QLD (Damaged Speed Trailers)":25,"QLD MPST":137,"Opp: ACT":171}},{"w":"22 Jun","proj":{"NSW Bidi":76,"WA AIO":187,"Gen 3.1":3,"NSW MSC Build":95,"QLD (Damaged Speed Trailers)":25,"QLD MPST":113,"Opp: ACT":171}},{"w":"29 Jun","proj":{"NSW Bidi":76,"WA AIO":187,"Gen 3.1":3,"NSW MSC Build":126,"QLD (Damaged Speed Trailers)":25,"QLD MPST":56,"Opp: ACT":171}},{"w":"06 Jul","proj":{"NSW Bidi":76,"QLD Speed":71,"WA AIO":187,"NSW MSC Build":126,"QLD (Damaged Speed Trailers)":25,"QLD MPST":56,"Opp: ACT":171}},{"w":"13 Jul","proj":{"QLD Speed":71,"WA AIO":187,"NSW MSC Build":126,"QLD (Damaged Speed Trailers)":25,"QLD MPST":56,"Opp: ACT":171}},{"w":"20 Jul","proj":{"QLD Speed":71,"WA Fixed Sites":23,"NSW MSC Build":126,"QLD (Damaged Speed Trailers)":25,"QLD MPST":56,"Opp: ACT":171}},{"w":"27 Jul","proj":{"WA Fixed Sites":50,"Opp: ACT":171}},{"w":"03 Aug","proj":{"QLD Speed":214,"WA Fixed Sites":50,"Opp: ACT":171}},{"w":"10 Aug","proj":{"QLD Speed":214,"WA Fixed Sites":50,"Opp: ACT":171}},{"w":"17 Aug","proj":{"QLD Speed":214,"WA Fixed Sites":50,"Opp: ACT":171}},{"w":"24 Aug","proj":{"QLD Speed":214,"WA Fixed Sites":50,"QLD MPST":80,"Opp: ACT":171}},{"w":"31 Aug","proj":{"QLD Speed":71,"WA AIO":93,"WA Fixed Sites":23,"QLD MPST":80,"Opp: ACT":171}},{"w":"07 Sep","proj":{"QLD Speed":138,"WA AIO":187,"WA Fixed Sites":35,"QLD MPST":80,"Opp: ACT":171}},{"w":"14 Sep","proj":{"QLD Speed":138,"WA AIO":280,"WA Fixed Sites":35,"Opp: ACT":171}},{"w":"21 Sep","proj":{"QLD Speed":67,"WA AIO":187,"WA Fixed Sites":35,"Opp: ACT":171}},{"w":"28 Sep","proj":{"QLD Speed":67,"WA AIO":187,"WA Fixed Sites":69,"Opp: ACT":171}},{"w":"05 Oct","proj":{"WA AIO":93,"WA Fixed Sites":69,"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"12 Oct","proj":{"WA Fixed Sites":35,"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"19 Oct","proj":{"WA Fixed Sites":35,"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"26 Oct","proj":{"WA Fixed Sites":35,"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"02 Nov","proj":{"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"09 Nov","proj":{"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"16 Nov","proj":{"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"23 Nov","proj":{"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"30 Nov","proj":{"Opp: NSW MSC":1026,"Opp: ACT":171}},{"w":"07 Dec","proj":{"Opp: NSW MSC":1026}},{"w":"14 Dec","proj":{"Opp: NSW MSC":1026}},{"w":"21 Dec","proj":{"Opp: NSW MSC":1026}},{"w":"28 Dec","proj":{"Opp: NSW MSC":1026}},{"w":"04 Jan","proj":{"WA AIO":70,"Opp: NSW MSC":1026}},{"w":"11 Jan","proj":{"WA AIO":70,"Opp: NSW MSC":1026}},{"w":"18 Jan","proj":{"WA AIO":70,"Opp: NSW MSC":1026}},{"w":"25 Jan","proj":{"WA AIO":70,"Opp: NSW MSC":1026}}],"projects":["NSW Bidi","NSW Fixed Sites","Gen 3.1","NSW MSC Build","QLD (Damaged Speed Trailers)","QLD MPST","Opp: ACT","WA AIO","QLD Speed","WA Fixed Sites","Opp: NSW MSC"],"cap":[600,600,600,600,600,600,600,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700,700]};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LOCAL STORAGE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+const LS = {
+  get:(k,def)=>{ try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{ try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+let STATE = {
+  builds: [],     // processed builds from main sheet
+  scheduleBuilds: [],  // builds with dates for forecast
+  fc: FALLBACK_FC,     // forecast FTEs data
+  lookup: LS.get('lookup', DEFAULT_LOOKUP),
+  teams: LS.get('teams', DEFAULT_TEAMS),
+  showComplete: false,
+  filters: {btype:'',mfg:'',status:'',rag:''},
+  sortKey: 'name', sortAsc: true,
+  fcPeriod: 'week',
+  deptPeriod: 'week',
+  fcCapacity: LS.get('fcCapacity', null), // null = use computed totalCap()
+  syncedAt: null,
+  apiKey: LS.get('apiKey',''),
+  sheetMain:   LS.get('sheetMain',   SHEET_MAIN),
+  sheetLookup: LS.get('sheetLookup', SHEET_LOOKUP),
+};
+let charts = {};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function getMonday(d){const dt=new Date(d);const day=dt.getDay();dt.setDate(dt.getDate()-(day===0?6:day-1));dt.setHours(0,0,0,0);return dt;}
+function fmtWeek(d){return `${String(d.getDate()).padStart(2,'0')} ${MONTHS[d.getMonth()]}`;}
+function fmtMonth(d){return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;}
+function fmtQuarter(d){return `Q${Math.floor(d.getMonth()/3)+1} ${d.getFullYear()}`;}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SMARTSHEET API
+// ═══════════════════════════════════════════════════════════════════════════════
+async function ssGet(sheetId) {
+  const key = STATE.apiKey;
+  if (!key) throw new Error('No API key set. Click ⚙ Settings.');
+  const resp = await fetch(`/api/smartsheet?path=sheets/${sheetId}`, {
+    headers: { 'x-smartsheet-key': key }
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(`Smartsheet ${resp.status}: ${err.message || resp.statusText}`);
+  }
+  return resp.json();
+}
+
+function sheetToRows(sheet) {
+  const colById = {};
+  sheet.columns.forEach(c => { colById[c.id] = c.title; });
+  return sheet.rows.map(row => {
+    const obj = {};
+    row.cells.forEach(cell => {
+      const title = colById[cell.columnId];
+      if (title) obj[title] = cell.displayValue ?? cell.value ?? null;
+    });
+    return obj;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATA PROCESSING
+// ═══════════════════════════════════════════════════════════════════════════════
+function processMainSheet(rows) {
+  const builds = [], schedBuilds = [];
+  rows.forEach(r => {
+    const name  = r['Task Name']   || '';
+    const btype = r['Build Type']  || '';
+    if (!name || !btype) return;
+
+    const b = {
+      name,  btype,
+      mfg:     r['MFG/Opp']               || '',
+      status:  r['Status']                 || '',
+      rag:     r['RAG']                    || '',
+      priority:r['Priority']               || '',
+      blocker: r['Primary Blocker']        || 'None',
+      golive:  r['Go-Live Date / Target']  || '',
+      comment: r['Latest Comment']         || '',
+      project: r['Project']                || '',
+    };
+    builds.push(b);
+
+    // For forecast
+    const start  = r['Start Date'];
+    const finish = r['Finish Date'];
+    const qty    = parseFloat(r['Qty Units']) || 1;
+    if (start && finish && btype !== 'Manual Hrs Entry') {
+      schedBuilds.push({name, btype, start, finish, qty, status:b.status, project:b.project});
+    }
+  });
+  return {builds, schedBuilds};
+}
+
+function processLookupSheet(rows) {
+  const lookup = {};
+  const teamKeys = STATE.teams.map(t=>t.key);
+  // Map column title fragments to team keys
+  const colMap = {
+    'Base Builds':   'Andy',
+    'Boom':          'Mahmood',
+    'Camera':        'Hayley',
+    'Abox':          'Vinay',
+    'Computer':      'Alfredo',
+    'Picking':       'Asif',
+    'FAT':           'FAT',
+    'Car Mechanical':'Dwight',
+  };
+  rows.forEach(r => {
+    const bt = r['Build Type'];
+    if (!bt || bt === 'test') return;
+    const entry = {};
+    Object.entries(r).forEach(([col, val]) => {
+      if (col === 'Build Type' || col === 'Avg. Hours per Build') return;
+      const v = parseFloat(val) || 0;
+      const key = Object.entries(colMap).find(([frag]) => col.includes(frag));
+      if (key) entry[key[1]] = v;
+    });
+    lookup[bt] = entry;
+  });
+  return Object.keys(lookup).length ? lookup : STATE.lookup;
+}
+
+// Build week demand per team
+function computeWeekData(schedBuilds, lookup, teams) {
+  const map = {};
+  schedBuilds.forEach(b => {
+    const lkup = lookup[b.btype];
+    if (!lkup) return;
+    const qty = b.qty || 1;
+    const start = getMonday(new Date(b.start));
+    const finish = new Date(b.finish);
+    const weeks = [];
+    const cur = new Date(start);
+    while (cur <= finish) { weeks.push(new Date(cur)); cur.setDate(cur.getDate()+7); }
+    if (!weeks.length) weeks.push(start);
+    teams.forEach(t => {
+      const total = (lkup[t.key]||0) * qty;
+      if (!total) return;
+      const hpw = total / weeks.length;
+      weeks.forEach(w => {
+        const iso = w.toISOString().split('T')[0];
+        if (!map[iso]) map[iso] = {weekDate:new Date(w)};
+        map[iso][t.key] = (map[iso][t.key]||0) + hpw;
+      });
+    });
+  });
+  return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([iso,v])=>({iso,...v}));
+}
+
+function aggregateWeekData(weekData, period) {
+  if (period==='week') return weekData;
+  const buckets={}, order=[];
+  weekData.forEach(w => {
+    const key = period==='month' ? fmtMonth(w.weekDate) : fmtQuarter(w.weekDate);
+    if (!buckets[key]){buckets[key]={weekDate:w.weekDate,_label:key,_count:0};order.push(key);}
+    buckets[key]._count++;
+    STATE.teams.forEach(t => { buckets[key][t.key]=(buckets[key][t.key]||0)+(w[t.key]||0); });
+  });
+  return order.map(k=>buckets[k]);
+}
+
+function getWeekLabel(row, period) {
+  if (period==='week') return fmtWeek(row.weekDate);
+  return row._label;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEAM CAPACITY HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function teamCap(team) { return team.people.reduce((s,p)=>s+p.cap,0); }
+function totalCap()    { return STATE.teams.reduce((s,t)=>s+teamCap(t),0); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHART HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+function mkChart(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart(document.getElementById(id).getContext('2d'),cfg);}
+const darkTicks = {color:'#94A2BC',font:{size:11}};
+const darkGrid  = {color:'rgba(255,255,255,0.07)'};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LIVE BUILDS: RENDER
+// ═══════════════════════════════════════════════════════════════════════════════
+function getFiltered() {
+  const f = STATE.filters;
+  return STATE.builds.filter(d =>
+    (STATE.showComplete || d.status !== 'Complete') &&
+    (!f.btype  || d.btype  === f.btype)  &&
+    (!f.mfg    || d.mfg    === f.mfg)    &&
+    (!f.status || d.status === f.status) &&
+    (!f.rag    || d.rag    === f.rag)
+  );
+}
+
+function populateFilters() {
+  const uniq = k => [...new Set(STATE.builds.map(d=>d[k]).filter(Boolean))].sort();
+  [['fBtype','btype'],['fMfg','mfg'],['fStatus','status'],['fRag','rag']].forEach(([id,k])=>{
+    const sel=document.getElementById(id);
+    const cur=sel.value;
+    sel.innerHTML='<option value="">All</option>';
+    uniq(k).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===cur)o.selected=true;sel.appendChild(o);});
+  });
+}
+
+function renderLiveBuilds() {
+  const data = getFiltered();
+  document.getElementById('buildCount').textContent = `${data.length} builds shown`;
+  renderKPIs(data);
+  renderTypeChart(data);
+  renderStatusChart(data);
+  renderRagChart(data);
+  renderBlockChart(data);
+  renderFcChart();
+  renderTable(data);
+}
+
+function renderKPIs(data) {
+  const today=new Date(); today.setHours(0,0,0,0);
+  const in30=new Date(today); in30.setDate(in30.getDate()+30);
+  const tot=data.length, comp=data.filter(d=>d.status==='Complete').length;
+  document.getElementById('kTotal').textContent=tot;
+  document.getElementById('kComplete').textContent=comp;
+  document.getElementById('kPct').textContent=tot?Math.round(comp/tot*100)+'%':'';
+  document.getElementById('kRisk').textContent=data.filter(d=>d.rag==='Red'||d.rag==='Yellow').length;
+  document.getElementById('kBlocked').textContent=data.filter(d=>d.blocker&&d.blocker!=='None').length;
+  document.getElementById('kSoon').textContent=data.filter(d=>{if(!/^\d{4}/.test(d.golive))return false;const dt=new Date(d.golive);return dt>=today&&dt<=in30;}).length;
+}
+
+function tally(arr,key){const m={};arr.forEach(r=>{const v=r[key]||'—';m[v]=(m[v]||0)+1;});return m;}
+
+function renderTypeChart(data){
+  const t=tally(data,'btype');const labels=Object.keys(t).filter(k=>k!=='—');
+  mkChart('cType',{type:'doughnut',data:{labels,datasets:[{data:labels.map(l=>t[l]),backgroundColor:PAL,borderWidth:2,borderColor:'#18223A'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}}}}});
+}
+function renderStatusChart(data){
+  const s=tally(data,'status');
+  const order=['Not Started','In Progress','On Hold','TBC','Removed'].concat(STATE.showComplete?['Complete']:[]);
+  const sl=order.filter(x=>s[x]);
+  mkChart('cStatus',{type:'bar',data:{labels:sl,datasets:[{data:sl.map(x=>s[x]),backgroundColor:'#4AA3E0',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
+}
+function renderRagChart(data){
+  const rg=tally(data,'rag');const rO=['Red','Yellow','Green','Gray','—'];const rl=rO.filter(x=>rg[x]);
+  mkChart('cRag',{type:'doughnut',data:{labels:rl,datasets:[{data:rl.map(x=>rg[x]),backgroundColor:rl.map(x=>RAGC[x==='—'?'':x]),borderWidth:2,borderColor:'#18223A'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}}}}});
+}
+function renderBlockChart(data){
+  const bl=tally(data.filter(r=>r.blocker&&r.blocker!=='None'),'blocker');
+  const bk=Object.keys(bl).sort((a,b)=>bl[b]-bl[a]);
+  mkChart('cBlock',{type:'bar',data:{labels:bk.length?bk:['(none)'],datasets:[{data:bk.length?bk.map(x=>bl[x]):[0],backgroundColor:'#E58C24',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
+}
+
+function setFcPeriod(p,btn){STATE.fcPeriod=p;document.querySelectorAll('#tabLive .period-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderFcChart();}
+
+function renderFcChart(){
+  const fc=STATE.fc; if(!fc||!fc.weeks) return;
+  const wc_map=(p)=>{
+    if(p==='week') return {weeks:fc.weeks,cap:fc.cap,wc:fc.weeks.map(()=>1)};
+    const bw={},bc={},bn={},order=[];
+    const MAP={Jun:'Jun',Jul:'Jul',Aug:'Aug',Sep:'Sep',Oct:'Oct',Nov:'Nov',Dec:'Dec',Jan:'Jan'};
+    const QMAP={Jun:'Q3',Jul:'Q3',Aug:'Q3',Sep:'Q4',Oct:'Q4',Nov:'Q4',Dec:'Q1',Jan:'Q1'};
+    fc.weeks.forEach((w,i)=>{
+      const mon=w.w.split(' ')[1];
+      const key=p==='month'?(MAP[mon]||mon)+' '+((mon==='Jan')?'2027':'2026'):((QMAP[mon]||'Q?')+' '+((mon==='Jan')?'2027':'2026'));
+      if(!bw[key]){bw[key]={w:key,proj:{}};bc[key]=0;bn[key]=0;order.push(key);}
+      fc.projects.forEach(pr=>{bw[key].proj[pr]=(bw[key].proj[pr]||0)+((w.proj[pr])||0);});
+      bc[key]+=(fc.cap[i]||600);bn[key]++;
+    });
+    return {weeks:order.map(k=>bw[k]),cap:order.map(k=>bc[k]),wc:order.map(k=>bn[k])};
+  };
+  const {weeks,cap:rawCap,wc}=wc_map(STATE.fcPeriod);
+  const colorOf={}; fc.projects.forEach((p,i)=>colorOf[p]=PAL[i%PAL.length]);
+  const ds=fc.projects.map(p=>({label:p,type:'bar',data:weeks.map((w,i)=>+((w.proj[p]||0)/(HRS*(wc[i]||1))).toFixed(1)),backgroundColor:colorOf[p],stack:'h',borderWidth:0}));
+  const capFte=rawCap.map((v,i)=>+((v/(HRS*(wc[i]||1))).toFixed(1)));
+  ds.push({label:'Capacity',type:'line',data:capFte,borderColor:'#E2574F',borderWidth:2.5,stepped:true,pointRadius:3,pointBackgroundColor:'#E2574F',fill:false,order:0});
+  document.getElementById('fcLegend').innerHTML=fc.projects.map(p=>`<span><span class="lsw" style="background:${colorOf[p]}"></span>${p}</span>`).join('')+`<span style="font-weight:700"><span class="lln"></span>Capacity</span>`;
+  mkChart('cFc',{type:'bar',data:{labels:weeks.map(w=>w.w),datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{stacked:true,grid:{display:false},ticks:{...darkTicks,maxRotation:45,minRotation:45}},
+      y:{stacked:true,title:{display:true,text:'FTEs (6h day)',color:'#94A2BC',font:{size:11}},grid:darkGrid,ticks:{...darkTicks,precision:1}}}}});
+}
+
+function renderTable(data) {
+  const sorted=[...data].sort((a,b)=>{const av=a[STATE.sortKey]||'';const bv=b[STATE.sortKey]||'';return STATE.sortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString());});
+  document.getElementById('tableTitle').textContent=`Builds (${sorted.length})`;
+  document.getElementById('tBody').innerHTML=sorted.map(r=>`
+    <tr>
+      <td style="font-weight:700;max-width:190px" class="trunc">${r.name}</td>
+      <td class="trunc" style="max-width:140px;color:#94A2BC">${r.btype||'—'}</td>
+      <td>${r.mfg||'—'}</td>
+      <td>${r.status||'—'}</td>
+      <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
+      <td>${r.priority||'—'}</td>
+      <td>${r.blocker&&r.blocker!=='None'?`<span class="blk-tag">${r.blocker}</span>`:'<span class="dim">—</span>'}</td>
+      <td style="white-space:nowrap;color:#94A2BC">${r.golive||'—'}</td>
+      <td class="trunc" title="${(r.comment||'').replace(/"/g,'&quot;')}">${r.comment||'—'}</td>
+    </tr>`).join('');
+}
+
+function applyFilters(){STATE.filters={btype:document.getElementById('fBtype').value,mfg:document.getElementById('fMfg').value,status:document.getElementById('fStatus').value,rag:document.getElementById('fRag').value};renderLiveBuilds();}
+function resetFilters(){['fBtype','fMfg','fStatus','fRag'].forEach(id=>document.getElementById(id).value='');STATE.filters={btype:'',mfg:'',status:'',rag:''};renderLiveBuilds();}
+function toggleComplete(){STATE.showComplete=!STATE.showComplete;document.getElementById('showCompleteBtn').classList.toggle('on',STATE.showComplete);renderLiveBuilds();}
+function sortBy(key){if(STATE.sortKey===key)STATE.sortAsc=!STATE.sortAsc;else{STATE.sortKey=key;STATE.sortAsc=true;}document.querySelectorAll('[id^=s_]').forEach(el=>el.textContent='');document.getElementById('s_'+key).textContent=STATE.sortAsc?'↑':'↓';renderLiveBuilds();}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FORECAST TAB: RENDER
+// ═══════════════════════════════════════════════════════════════════════════════
+function setDeptPeriod(p,btn){STATE.deptPeriod=p;document.querySelectorAll('#tabForecast .period-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');renderForecastTab();}
+
+function renderForecastTab() {
+  const weekData = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
+  const data = aggregateWeekData(weekData, STATE.deptPeriod);
+  document.getElementById('fcBuildCount').textContent = STATE.scheduleBuilds.length;
+  updateCapInfo();
+  renderFactoryChart(data);
+  renderDeptCards(data);
+}
+
+function updateCapInfo() {
+  const computed = totalCap();
+  const overridden = STATE.fcCapacity !== null;
+  const display = overridden ? STATE.fcCapacity : computed;
+  document.getElementById('totalCapInfo').textContent =
+    `Total capacity: ${display}h/week${overridden ? ' (manually set — drag red line to adjust)' : ` across ${STATE.teams.length} teams`}.`;
+  document.getElementById('resetCapBtn').style.display = overridden ? '' : 'none';
+  document.getElementById('capDragHint').style.display = overridden ? 'none' : '';
+}
+
+function resetCapacity() {
+  STATE.fcCapacity = null;
+  LS.set('fcCapacity', null);
+  renderForecastTab();
+}
+
+function renderFactoryChart(data) {
+  const labels = data.map(d=>getWeekLabel(d,STATE.deptPeriod));
+  const wc = data.map(d=>d._count||1);
+  const baseCap = STATE.fcCapacity !== null ? STATE.fcCapacity : totalCap();
+
+  const ds = STATE.teams.map((t,i)=>({
+    label:t.name, type:'bar',
+    data:data.map(d=>+(d[t.key]||0).toFixed(1)),
+    backgroundColor:t.color, stack:'d', borderWidth:0,
+  }));
+  ds.push({label:'Capacity',type:'line',data:data.map((_,i)=>baseCap*(wc[i]||1)),borderColor:'#E2574F',borderDash:[6,4],borderWidth:3,pointRadius:6,pointBackgroundColor:'#E2574F',pointHoverRadius:9,fill:false,order:0});
+
+  document.getElementById('deptLegend').innerHTML=STATE.teams.map(t=>`<span><span class="lsw" style="background:${t.color}"></span>${t.name}</span>`).join('')
+    +`<span style="font-weight:700"><span class="lln"></span>Capacity (${baseCap}h/wk — drag to adjust)</span>`;
+
+  mkChart('cFactory',{type:'bar',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+      if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw}h (drag line to adjust)`;
+      return `${ctx.dataset.label}: ${ctx.raw}h`;
+    }}}},
+    scales:{x:{stacked:true,grid:{display:false},ticks:{...darkTicks,maxRotation:45,minRotation:45}},
+      y:{stacked:true,title:{display:true,text:'Hours',color:'#94A2BC',font:{size:11}},grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
+
+  // Attach drag after chart is rendered
+  attachCapacityDrag('cFactory', data, wc);
+}
+
+// ─── Draggable capacity line ───────────────────────────────────────────────────
+function attachCapacityDrag(chartId, data, wc) {
+  const canvas = document.getElementById(chartId);
+  if (!canvas) return;
+  // Remove old listeners by replacing canvas clone trick on a flag
+  canvas._dragBound = true;
+  let dragging = false;
+  let labelEl = null;
+
+  function getCapY() {
+    const chart = charts[chartId];
+    if (!chart) return null;
+    const baseCap = STATE.fcCapacity !== null ? STATE.fcCapacity : totalCap();
+    // Use first point (wc[0]||1) as reference for y position
+    return chart.scales.y.getPixelForValue(baseCap * (wc[0]||1));
+  }
+
+  function nearLine(e) {
+    const rect = canvas.getBoundingClientRect();
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    const capY = getCapY();
+    return capY !== null && Math.abs(y - capY) < 14;
+  }
+
+  function onMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    const chart = charts[chartId];
+    if (!chart) return;
+
+    if (!dragging) {
+      canvas.style.cursor = nearLine(e) ? 'ns-resize' : 'default';
+      return;
+    }
+    e.preventDefault();
+
+    // Convert y-pixel → data value for wc[0], then derive base cap
+    const rawValue = chart.scales.y.getValueForPixel(y);
+    const wc0 = wc[0] || 1;
+    const newBaseCap = Math.max(0, Math.round(rawValue / wc0));
+    STATE.fcCapacity = newBaseCap;
+
+    // Live-update the capacity dataset without full re-render
+    const capDataset = chart.data.datasets[chart.data.datasets.length - 1];
+    capDataset.data = data.map((_,i) => newBaseCap * (wc[i]||1));
+    chart.update('none');
+
+    // Update legend + info live
+    document.getElementById('deptLegend').querySelector('span:last-child').innerHTML =
+      `<span class="lsw" style="display:inline-block;width:18px;height:0;border-top:2.5px solid #E2574F;margin-right:4px;vertical-align:middle"></span>Capacity (${newBaseCap}h/wk — drag to adjust)`;
+    document.getElementById('totalCapInfo').textContent =
+      `Total capacity: ${newBaseCap}h/week (manually set — drag red line to adjust).`;
+
+    // Show floating label near line
+    if (!labelEl) {
+      labelEl = document.createElement('div');
+      labelEl.style.cssText='position:absolute;background:#E2574F;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;pointer-events:none;z-index:50;white-space:nowrap';
+      canvas.parentElement.style.position='relative';
+      canvas.parentElement.appendChild(labelEl);
+    }
+    labelEl.textContent = `${newBaseCap}h/wk`;
+    labelEl.style.top  = Math.max(4, y - 22) + 'px';
+    labelEl.style.left = '10px';
+  }
+
+  function onDown(e) {
+    if (!nearLine(e)) return;
+    dragging = true;
+    canvas.style.cursor = 'ns-resize';
+    e.preventDefault();
+  }
+
+  function onUp() {
+    if (!dragging) return;
+    dragging = false;
+    canvas.style.cursor = 'default';
+    LS.set('fcCapacity', STATE.fcCapacity);
+    if (labelEl) { labelEl.remove(); labelEl = null; }
+    document.getElementById('resetCapBtn').style.display = '';
+    document.getElementById('capDragHint').style.display = 'none';
+    // Full re-render to sync dept cards
+    const weekData = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
+    renderDeptCards(aggregateWeekData(weekData, STATE.deptPeriod));
+    updateCapInfo();
+  }
+
+  // Abort previous listeners then attach fresh ones
+  if (canvas._dragAbort) canvas._dragAbort.abort();
+  const ac = new AbortController();
+  canvas._dragAbort = ac;
+  const sig = {signal: ac.signal};
+
+  canvas.addEventListener('mousedown',  onDown, sig);
+  canvas.addEventListener('mousemove',  onMove, sig);
+  canvas.addEventListener('mouseup',    onUp,   sig);
+  canvas.addEventListener('mouseleave', ()=>{ if(dragging) onUp(); else canvas.style.cursor='default'; }, sig);
+  canvas.addEventListener('touchstart', onDown, {passive:false, signal:ac.signal});
+  canvas.addEventListener('touchmove',  onMove, {passive:false, signal:ac.signal});
+  canvas.addEventListener('touchend',   onUp,   sig);
+}
+
+function renderDeptCards(data) {
+  const slice = data.slice(0,16);
+  const labels = slice.map(d=>getWeekLabel(d,STATE.deptPeriod));
+  const grid = document.getElementById('deptGrid');
+  grid.innerHTML = '';
+
+  STATE.teams.forEach((t,ti) => {
+    const demand = slice.map(d=>+(d[t.key]||0).toFixed(1));
+    const cap = teamCap(t);
+    const capLine = slice.map(d=>cap*(d._count||1));
+    const bgColors = demand.map((v,i)=>v>capLine[i]?'#E24B4A':t.color);
+
+    const card = document.createElement('div');
+    card.className='dept-card';
+    card.style.borderTopColor=t.color;
+    card.dataset.teamIdx=ti;
+
+    const pills = slice.slice(0,8).map((d,i)=>{
+      const dem=d[t.key]||0, c=cap*(d._count||1);
+      return dem>c
+        ?`<span class="pill pill-over">+${Math.round(dem-c)}h</span>`
+        :`<span class="pill pill-ok">OK</span>`;
+    }).join('');
+
+    card.innerHTML = `
+      <div class="dept-hd">
+        <input class="dept-name-input" value="${t.name}" onchange="updateTeamName(${ti},this.value)" style="background:transparent;border:none;border-bottom:1px dashed #4AA3E0;color:#E8ECF3;font-size:14px;font-weight:700;width:160px">
+        <div class="cap-edit">
+          <label>Cap/wk</label>
+          <input class="cap-input" type="number" value="${cap}" title="Total = sum of people below" readonly tabindex="-1" style="color:#94A2BC">
+          <span style="font-size:10px;color:#94A2BC">h</span>
+        </div>
+      </div>
+      <div class="dept-lead">${t.people.length} person${t.people.length>1?'s':''} · lead: ${t.lead}</div>
+      <div class="dept-ch"><canvas id="dc_${t.key}"></canvas></div>
+      <div class="week-pills">${pills}</div>
+      <div class="people-hd"><span>Team members</span></div>
+      <div id="people_${t.key}"></div>
+      <button class="add-person-btn" onclick="addPerson(${ti})">+ Add person</button>
+    `;
+    grid.appendChild(card);
+
+    // Render people
+    renderPeopleList(ti);
+
+    // Mini chart
+    if(charts[`dc_${t.key}`]) charts[`dc_${t.key}`].destroy();
+    charts[`dc_${t.key}`] = new Chart(document.getElementById(`dc_${t.key}`).getContext('2d'),{
+      type:'bar',
+      data:{labels,datasets:[
+        {type:'bar',data:demand,backgroundColor:bgColors,borderRadius:3,borderWidth:0,label:'Demand'},
+        {type:'line',data:capLine,borderColor:'#E2574F',borderDash:[5,3],borderWidth:1.5,pointRadius:0,fill:false,label:'Cap'}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+          if(ctx.dataset.label==='Cap') return `Cap: ${ctx.raw}h`;
+          const c=capLine[ctx.dataIndex];
+          return `${ctx.raw.toFixed(0)}h`+(ctx.raw>c?` (+${Math.round(ctx.raw-c)}h OVER)`:' ✓ SAFE');
+        }}}},
+        scales:{x:{grid:{display:false},ticks:{...darkTicks,font:{size:9},maxRotation:45,minRotation:45}},
+          y:{grid:darkGrid,ticks:{...darkTicks,font:{size:9},precision:0}}}
+      }
+    });
+  });
+}
+
+function renderPeopleList(ti) {
+  const t = STATE.teams[ti];
+  const el = document.getElementById(`people_${t.key}`);
+  if (!el) return;
+  el.innerHTML = t.people.map((p,pi)=>`
+    <div class="person-row">
+      <div class="person-av" style="background:${AV_COLORS[(ti*4+pi)%AV_COLORS.length]}">${p.initials||p.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase()}</div>
+      <div style="flex:1">
+        <input class="person-name-edit" value="${p.name}" onchange="updatePersonName(${ti},${pi},this.value)" onblur="updatePersonName(${ti},${pi},this.value)">
+        <div style="display:flex;align-items:center;gap:4px;margin-top:2px">
+          <span style="font-size:10px;color:#94A2BC">Cap:</span>
+          <input class="person-cap-edit" type="number" value="${p.cap}" min="0" max="999" onchange="updatePersonCap(${ti},${pi},this.value)" onblur="updatePersonCap(${ti},${pi},this.value)">
+          <span style="font-size:10px;color:#94A2BC">h/wk</span>
+        </div>
+      </div>
+      <button class="del-person" onclick="deletePerson(${ti},${pi})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EDITABLE TEAM STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+function updateTeamName(ti,val){ STATE.teams[ti].name=val; LS.set('teams',STATE.teams); }
+function updatePersonName(ti,pi,val){
+  STATE.teams[ti].people[pi].name=val;
+  const initials=val.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  STATE.teams[ti].people[pi].initials=initials;
+  LS.set('teams',STATE.teams);
+}
+function updatePersonCap(ti,pi,val){
+  STATE.teams[ti].people[pi].cap=parseInt(val)||0;
+  LS.set('teams',STATE.teams);
+  // Update total cap display
+  const card=document.querySelector(`[data-team-idx="${ti}"]`);
+  if(card){const inp=card.querySelector('.cap-input');if(inp)inp.value=teamCap(STATE.teams[ti]);}
+  renderForecastTab();
+}
+function deletePerson(ti,pi){
+  if(STATE.teams[ti].people.length<=1){alert('Teams must have at least 1 person.');return;}
+  STATE.teams[ti].people.splice(pi,1);
+  LS.set('teams',STATE.teams);
+  renderForecastTab();
+}
+function addPerson(ti){
+  const name=prompt('New person name:','New Person');
+  if(!name) return;
+  const cap=parseInt(prompt(`Weekly capacity for ${name} (hours):`,40))||40;
+  const initials=name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  STATE.teams[ti].people.push({name,cap,initials});
+  LS.set('teams',STATE.teams);
+  renderForecastTab();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUILD HOURS MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+function openBuildHours(){
+  const btypes=Object.keys(STATE.lookup);
+  const tkeys=STATE.teams.map(t=>t.key);
+  const tnames=STATE.teams.map(t=>t.name);
+  let html=`<tr><th>Build Type</th>${tnames.map(n=>`<th>${n}</th>`).join('')}</tr>`;
+  btypes.forEach(bt=>{
+    html+=`<tr><td class="row-label">${bt}</td>`;
+    tkeys.forEach(k=>{
+      const val=(STATE.lookup[bt]||{})[k]||0;
+      html+=`<td><input type="number" value="${val}" min="0" step="0.5" data-bt="${bt}" data-key="${k}"></td>`;
+    });
+    html+='</tr>';
+  });
+  document.getElementById('lookupEditTable').innerHTML=html;
+  document.getElementById('hoursOverlay').classList.add('open');
+}
+function closeHours(){document.getElementById('hoursOverlay').classList.remove('open');}
+function saveBuildHours(){
+  const inputs=document.querySelectorAll('#lookupEditTable input');
+  inputs.forEach(inp=>{
+    const bt=inp.dataset.bt, k=inp.dataset.key;
+    if(!STATE.lookup[bt]) STATE.lookup[bt]={};
+    STATE.lookup[bt][k]=parseFloat(inp.value)||0;
+  });
+  LS.set('lookup',STATE.lookup);
+  closeHours();
+  renderForecastTab();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SETTINGS MODAL
+// ═══════════════════════════════════════════════════════════════════════════════
+function openSettings(){
+  document.getElementById('apiKeyInput').value=STATE.apiKey||'';
+  document.getElementById('sheetMainInput').value=STATE.sheetMain||SHEET_MAIN;
+  document.getElementById('sheetLookupInput').value=STATE.sheetLookup||SHEET_LOOKUP;
+  document.getElementById('settingsMsg').style.display='none';
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+function closeSettings(){document.getElementById('settingsOverlay').classList.remove('open');}
+function saveSettings(){
+  STATE.apiKey=document.getElementById('apiKeyInput').value.trim();
+  STATE.sheetMain=document.getElementById('sheetMainInput').value.trim()||SHEET_MAIN;
+  STATE.sheetLookup=document.getElementById('sheetLookupInput').value.trim()||SHEET_LOOKUP;
+  LS.set('apiKey',STATE.apiKey);
+  LS.set('sheetMain',STATE.sheetMain);
+  LS.set('sheetLookup',STATE.sheetLookup);
+  closeSettings();
+  refresh();
+}
+async function testConnection(){
+  const key=document.getElementById('apiKeyInput').value.trim();
+  if(!key){showSettingsMsg('err','Please enter an API key first.');return;}
+  showSettingsMsg('ok','Testing…');
+  try{
+    const resp=await fetch(`/api/smartsheet?path=users/me`,{'headers':{'x-smartsheet-key':key}});
+    const data=await resp.json();
+    if(resp.ok) showSettingsMsg('ok',`✓ Connected as ${data.email||'unknown'}`);
+    else showSettingsMsg('err',`✕ ${data.message||resp.statusText}`);
+  }catch(e){showSettingsMsg('err',`✕ ${e.message}`);}
+}
+function showSettingsMsg(type,text){const el=document.getElementById('settingsMsg');el.className=`msg-box ${type}`;el.textContent=text;el.style.display='block';}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SYNC STATUS
+// ═══════════════════════════════════════════════════════════════════════════════
+function setSyncStatus(state,text){
+  const dot=document.getElementById('syncDot'),txt=document.getElementById('syncTxt');
+  dot.className='sync-dot '+(state==='ok'?'':(state==='loading'?'loading':(state==='error'?'error':'stale')));
+  txt.textContent=text;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REFRESH / FETCH
+// ═══════════════════════════════════════════════════════════════════════════════
+async function refresh() {
+  if (!STATE.apiKey) {
+    setSyncStatus('stale','No API key');
+    openSettings();
+    return;
+  }
+  showLoading('Fetching production sheet…');
+  setSyncStatus('loading','Syncing…');
+  try {
+    // Fetch main sheet
+    setLoadingTxt('Fetching builds…');
+    const mainSheet = await ssGet(STATE.sheetMain);
+    const mainRows  = sheetToRows(mainSheet);
+    const {builds, schedBuilds} = processMainSheet(mainRows);
+    STATE.builds = builds;
+    STATE.scheduleBuilds = schedBuilds;
+
+    // Fetch lookup sheet
+    setLoadingTxt('Fetching build hours…');
+    try {
+      const lookupSheet = await ssGet(STATE.sheetLookup);
+      const lookupRows  = sheetToRows(lookupSheet);
+      STATE.lookup = processLookupSheet(lookupRows);
+      LS.set('lookup', STATE.lookup);
+    } catch(e) {
+      console.warn('Lookup sheet fetch failed, using saved/default:', e.message);
+    }
+
+    STATE.syncedAt = new Date();
+    const t = STATE.syncedAt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    setSyncStatus('ok',`Synced ${t} · ${builds.length} builds`);
+
+    // Rebuild filters
+    populateFilters();
+    renderLiveBuilds();
+    renderForecastTab();
+  } catch(e) {
+    setSyncStatus('error', e.message);
+    alert('Sync failed: ' + e.message + '\n\nCheck your API key in Settings.');
+  } finally {
+    hideLoading();
+  }
+}
+
+function showLoading(txt){const o=document.getElementById('loadingOverlay');o.classList.add('show');setLoadingTxt(txt);}
+function hideLoading(){document.getElementById('loadingOverlay').classList.remove('show');}
+function setLoadingTxt(t){document.getElementById('loadingTxt').textContent=t;}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ═══════════════════════════════════════════════════════════════════════════════
+function showTab(id, el) {
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('tab'+id.charAt(0).toUpperCase()+id.slice(1)).classList.add('active');
+  el.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INIT — use fallback data on load, fetch live if API key present
+// ═══════════════════════════════════════════════════════════════════════════════
+(function init(){
+  // Close modals on overlay click
+  ['settingsOverlay','hoursOverlay'].forEach(id=>{
+    document.getElementById(id).addEventListener('click',e=>{if(e.target.id===id)document.getElementById(id).classList.remove('open');});
+  });
+
+  if (STATE.apiKey) {
+    refresh();
+  } else {
+    // Load with fallback/cached data
+    const cached = LS.get('cachedBuilds', null);
+    if (cached) {
+      STATE.builds = cached.builds || [];
+      STATE.scheduleBuilds = cached.schedBuilds || [];
+    }
+    populateFilters();
+    renderLiveBuilds();
+    renderForecastTab();
+    setSyncStatus('stale','⚙ Settings — add API key to go live');
+  }
+})();
+</script>
+</body>
+</html>
