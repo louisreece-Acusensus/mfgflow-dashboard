@@ -926,8 +926,8 @@ function openBuild(i){
       ${item('MFG/Opp',esc(r.mfg))}
       ${item('Priority',esc(r.priority))}
       ${item('Qty units',esc(r.qtyu))}
-      ${item('Start',esc(r.startd))}
-      ${item('Finish',esc(r.finishd))}
+      ${item('Start',esc(String(r.startd||'').split('T')[0]))}
+      ${item('Finish',esc(String(r.finishd||'').split('T')[0]))}
       ${item('Go-live target',esc(r.golive))}
       ${item('Asset #',esc(r.asset))}
     </div>
