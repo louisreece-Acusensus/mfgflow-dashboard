@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MFGFLOW Production Dashboard</title>
+<!-- v2026-07-03: build drill-down modal · % complete/picking/days-left columns · chart click-to-filter -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 /* ── Reset & base ──────────────────────────────────────────────────────────── */
@@ -172,6 +173,16 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .lookup-table input:focus{background:#1C2840;outline:1px solid #4AA3E0;border-radius:2px}
 .lookup-table .row-label{text-align:left;color:#C9D4E5;padding:4px 8px;font-weight:600;background:#1C2840}
 
+/* ── Build detail modal ─────────────────────────────────────────────────────── */
+.bd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 18px;margin:16px 0}
+.bd-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600;margin-bottom:2px}
+.bd-val{font-size:13px;color:#E8ECF3}
+.bd-pill{font-size:11px;font-weight:700;padding:2px 9px;border-radius:10px;display:inline-block;margin-right:6px;margin-bottom:4px}
+.bd-ok{background:rgba(99,153,34,.2);color:#7ED957}
+.bd-no{background:rgba(226,75,74,.15);color:#E24B4A}
+.bd-comment{background:#1C2840;border:1px solid #2A3858;border-radius:8px;padding:10px 12px;font-size:12px;color:#C9D4E5;margin-top:6px;white-space:pre-wrap;max-height:180px;overflow-y:auto}
+.pct-bar{width:44px;height:5px;background:#1C2840;border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
+
 /* ── Loading overlay ─────────────────────────────────────────────────────────── */
 .loading-overlay{position:fixed;inset:0;background:rgba(11,19,34,.8);z-index:300;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px}
 .loading-overlay.show{display:flex}
@@ -211,6 +222,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <div class="fg"><label>MFG / Opp</label><select id="fMfg" onchange="applyFilters()"><option value="">All</option></select></div>
     <div class="fg"><label>Status</label><select id="fStatus" onchange="applyFilters()"><option value="">All</option></select></div>
     <div class="fg"><label>RAG</label><select id="fRag" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>Blocker</label><select id="fBlocker" onchange="applyFilters()"><option value="">All</option></select></div>
     <div class="fa">
       <button class="btn btn-blue btn-sm" onclick="resetFilters()">Reset</button>
       <button class="btn-toggle" id="showCompleteBtn" onclick="toggleComplete()">Show complete</button>
@@ -231,14 +243,14 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
   <!-- Charts row 1 -->
   <div class="grid2">
-    <div class="card"><h3>Builds by type</h3><div class="card-sub">Distribution of build types</div><div class="ch260"><canvas id="cType"></canvas></div></div>
-    <div class="card"><h3>Build status</h3><div class="card-sub">Status distribution</div><div class="ch260"><canvas id="cStatus"></canvas></div></div>
+    <div class="card"><h3>Builds by type</h3><div class="card-sub">Distribution of build types · click a segment to filter</div><div class="ch260"><canvas id="cType"></canvas></div></div>
+    <div class="card"><h3>Build status</h3><div class="card-sub">Status distribution · click a bar to filter</div><div class="ch260"><canvas id="cStatus"></canvas></div></div>
   </div>
 
   <!-- Charts row 2 -->
   <div class="grid2">
-    <div class="card"><h3>Schedule health (RAG)</h3><div class="card-sub">Overall project health</div><div class="ch260"><canvas id="cRag"></canvas></div></div>
-    <div class="card"><h3>Primary blockers</h3><div class="card-sub">Active blocker types</div><div class="ch260"><canvas id="cBlock"></canvas></div></div>
+    <div class="card"><h3>Schedule health (RAG)</h3><div class="card-sub">Overall project health · click a segment to filter</div><div class="ch260"><canvas id="cRag"></canvas></div></div>
+    <div class="card"><h3>Primary blockers</h3><div class="card-sub">Active blocker types · click to filter (Parts → Pick List)</div><div class="ch260"><canvas id="cBlock"></canvas></div></div>
   </div>
 
   <!-- Forecast FTEs -->
@@ -265,9 +277,12 @@ tr:hover td{background:rgba(255,255,255,.03)}
           <th onclick="sortBy('btype')">Type <span id="s_btype"></span></th>
           <th onclick="sortBy('mfg')">MFG/Opp <span id="s_mfg"></span></th>
           <th onclick="sortBy('status')">Status <span id="s_status"></span></th>
+          <th onclick="sortBy('pct')">% Compl <span id="s_pct"></span></th>
+          <th onclick="sortBy('picking')">Picking <span id="s_picking"></span></th>
           <th onclick="sortBy('rag')">RAG <span id="s_rag"></span></th>
           <th onclick="sortBy('priority')">Priority <span id="s_priority"></span></th>
           <th onclick="sortBy('blocker')">Blocker <span id="s_blocker"></span></th>
+          <th onclick="sortBy('wdleft')">Days left <span id="s_wdleft"></span></th>
           <th onclick="sortBy('golive')">Go-live <span id="s_golive"></span></th>
           <th>Latest comment</th>
         </tr></thead>
@@ -374,6 +389,15 @@ tr:hover td{background:rgba(255,255,255,.03)}
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════════════
+     BUILD DETAIL MODAL
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="buildOverlay">
+  <div class="modal" style="width:640px;max-width:96vw">
+    <div id="buildModalBody"></div>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS & DEFAULTS
@@ -438,7 +462,7 @@ let STATE = {
   lookup: LS.get('lookup', DEFAULT_LOOKUP),
   teams: LS.get('teams', DEFAULT_TEAMS),
   showComplete: false,
-  filters: {btype:'',mfg:'',status:'',rag:''},
+  filters: {btype:'',mfg:'',status:'',rag:'',blocker:''},
   sortKey: 'name', sortAsc: true,
   fcPeriod: 'week',
   deptPeriod: 'week',
@@ -511,6 +535,20 @@ function processMainSheet(rows) {
       golive:  r['Go-Live Date / Target']  || '',
       comment: r['Latest Comment']         || '',
       project: r['Project']                || '',
+      // Drill-down detail fields
+      pct:     r['% Complete']             ?? '',
+      picking: r['Picking Status']         || '',
+      wdleft:  r['Workdays Left']          ?? '',
+      bom:      r['BOM'] === true || r['BOM'] === 'true',
+      wo:       r['WO'] === true || r['WO'] === 'true',
+      specs:    r['Specs / Drawings'] === true || r['Specs / Drawings'] === 'true',
+      picklist: r['Picklist'] === true || r['Picklist'] === 'true',
+      client:  r['Client']                 || '',
+      asset:   r['Asset #']                || '',
+      qtyu:    r['Qty Units']              || '',
+      startd:  r['Start Date']             || '',
+      finishd: r['Finish Date']            || '',
+      commentDate: r['Latest Comment Date']|| '',
     };
     builds.push(b);
 
@@ -648,13 +686,14 @@ function getFiltered() {
     (!f.btype  || d.btype  === f.btype)  &&
     (!f.mfg    || d.mfg    === f.mfg)    &&
     (!f.status || d.status === f.status) &&
-    (!f.rag    || d.rag    === f.rag)
+    (!f.rag    || d.rag    === f.rag)    &&
+    (!f.blocker|| d.blocker === f.blocker)
   );
 }
 
 function populateFilters() {
   const uniq = k => [...new Set(STATE.builds.map(d=>d[k]).filter(Boolean))].sort();
-  [['fBtype','btype'],['fMfg','mfg'],['fStatus','status'],['fRag','rag']].forEach(([id,k])=>{
+  [['fBtype','btype'],['fMfg','mfg'],['fStatus','status'],['fRag','rag'],['fBlocker','blocker']].forEach(([id,k])=>{
     const sel=document.getElementById(id);
     const cur=sel.value;
     sel.innerHTML='<option value="">All</option>';
@@ -695,11 +734,14 @@ function renderTypeChart(data){
   const t=tally(data,'btype');const labels=Object.keys(t).filter(k=>k!=='—');
   const total=labels.reduce((s,l)=>s+t[l],0);
   mkChart('cType',{type:'doughnut',data:{labels,datasets:[{data:labels.map(l=>t[l]),backgroundColor:PAL,borderWidth:2,borderColor:'#18223A'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(_,els)=>{if(els.length)toggleFilter('btype','fBtype',labels[els[0].index]);},
+      onHover:chartPointer,
+      plugins:{
       legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}},
       tooltip:{callbacks:{
         title: ctx => ctx[0].label,
-        label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%)`
+        label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%) · click to filter`
       }}
     }}});
 }
@@ -708,20 +750,26 @@ function renderStatusChart(data){
   const order=['Not Started','In Progress','On Hold','TBC','Removed'].concat(STATE.showComplete?['Complete']:[]);
   const sl=order.filter(x=>s[x]);
   mkChart('cStatus',{type:'bar',data:{labels:sl,datasets:[{data:sl.map(x=>s[x]),backgroundColor:'#4AA3E0',borderRadius:4}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(_,els)=>{if(els.length)toggleFilter('status','fStatus',sl[els[0].index]);},
+      onHover:chartPointer,
+      plugins:{
       legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} build${ctx.raw===1?'':'s'}`}}
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} build${ctx.raw===1?'':'s'} · click to filter`}}
     },scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
 }
 function renderRagChart(data){
   const rg=tally(data,'rag');const rO=['Red','Yellow','Green','Gray','—'];const rl=rO.filter(x=>rg[x]);
   const total=rl.reduce((s,x)=>s+rg[x],0);
   mkChart('cRag',{type:'doughnut',data:{labels:rl,datasets:[{data:rl.map(x=>rg[x]),backgroundColor:rl.map(x=>RAGC[x==='—'?'':x]),borderWidth:2,borderColor:'#18223A'}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{
+    options:{responsive:true,maintainAspectRatio:false,
+      onClick:(_,els)=>{if(els.length)toggleFilter('rag','fRag',rl[els[0].index]);},
+      onHover:chartPointer,
+      plugins:{
       legend:{position:'right',labels:{color:'#C9D4E5',font:{size:11},padding:8}},
       tooltip:{callbacks:{
         title: ctx => ctx[0].label + ' state',
-        label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%)`
+        label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%) · click to filter`
       }}
     }}});
 }
@@ -737,16 +785,18 @@ function renderBlockChart(data){
         legend:{display:false},
         tooltip:{callbacks:{label:ctx=>{
           const n=ctx.raw, lbl=ctx.label;
-          const suffix = isPartsAvail(lbl) ? '  →  Click to open Pick List' : '';
+          const suffix = isPartsAvail(lbl) ? '  →  Click to open Pick List' : '  · click to filter';
           return `${lbl}: ${n} build${n===1?'':'s'}${suffix}`;
         }}}
       },
       onClick:(_,els)=>{
         if(!els.length) return;
         const lbl=bk[els[0].index];
+        if(!lbl) return;
         if(isPartsAvail(lbl)) window.open(PICKLIST,'_blank');
+        else toggleFilter('blocker','fBlocker',lbl);
       },
-      onHover:(evt,els)=>{evt.native.target.style.cursor=els.length&&isPartsAvail(bk[els[0].index])?'pointer':'default';},
+      onHover:chartPointer,
       scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}
     }});
 }
@@ -790,25 +840,117 @@ function renderFcChart(){
   }});
 }
 
+// ── Cell render helpers ──────────────────────────────────────────────────────
+function pctNum(p){
+  if(p===''||p===null||p===undefined) return null;
+  const s=String(p); const n=parseFloat(s.replace('%',''));
+  if(isNaN(n)) return null;
+  return (s.indexOf('%')<0 && n<=1) ? n*100 : n;
+}
+function pctCell(p){
+  const n=pctNum(p);
+  if(n===null) return '<span class="dim">—</span>';
+  const c=n>=100?'#7ED957':(n>=50?'#4AA3E0':'#EF9F27');
+  return `<div style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span class="pct-bar"><span style="display:block;width:${Math.min(100,Math.max(0,n))}%;height:100%;background:${c}"></span></span><span style="color:#94A2BC">${Math.round(n)}%</span></div>`;
+}
+function pickCell(p){
+  if(!p) return '<span class="dim">—</span>';
+  const c=/build stop/i.test(p)?'#E24B4A':(/missing parts/i.test(p)?'#EF9F27':(/complete/i.test(p)?'#7ED957':(/awaiting bom/i.test(p)?'#8B7FE8':'#94A2BC')));
+  return `<span style="color:${c};font-weight:600;white-space:nowrap">${p}</span>`;
+}
+function wdCell(v){
+  if(v===''||v===null||v===undefined) return '<span class="dim">—</span>';
+  const n=parseFloat(v);
+  if(isNaN(n)) return `<span class="dim">${v}</span>`;
+  const c=n<0?'#E24B4A':(n<=5?'#EF9F27':'#94A2BC');
+  return `<span style="color:${c};font-weight:${n<0?700:400}">${n}</span>`;
+}
+function blockerCell(r){
+  return r.blocker&&r.blocker!=='None'
+    ? (/parts/i.test(r.blocker)
+        ? `<a class="blk-tag blk-link" href="http://192.168.130.145:5000/picklists/" target="_blank" title="Open Pick List" onclick="event.stopPropagation()">${r.blocker} ↗</a>`
+        : `<span class="blk-tag">${r.blocker}</span>`)
+    : '<span class="dim">—</span>';
+}
+
+let LAST_RENDERED=[];
 function renderTable(data) {
-  const sorted=[...data].sort((a,b)=>{const av=a[STATE.sortKey]||'';const bv=b[STATE.sortKey]||'';return STATE.sortAsc?av.toString().localeCompare(bv.toString()):bv.toString().localeCompare(av.toString());});
-  document.getElementById('tableTitle').textContent=`Builds (${sorted.length})`;
-  document.getElementById('tBody').innerHTML=sorted.map(r=>`
-    <tr>
+  const sorted=[...data].sort((a,b)=>{
+    const av=a[STATE.sortKey]??'', bv=b[STATE.sortKey]??'';
+    const an=parseFloat(String(av).replace('%','')), bn=parseFloat(String(bv).replace('%',''));
+    const bothNum=!isNaN(an)&&!isNaN(bn)&&String(av).trim()!==''&&String(bv).trim()!=='';
+    const cmp=bothNum?an-bn:String(av).localeCompare(String(bv));
+    return STATE.sortAsc?cmp:-cmp;
+  });
+  LAST_RENDERED=sorted;
+  document.getElementById('tableTitle').textContent=`Builds (${sorted.length}) · click a row for details`;
+  document.getElementById('tBody').innerHTML=sorted.map((r,i)=>`
+    <tr onclick="openBuild(${i})" style="cursor:pointer" title="Click for build details">
       <td style="font-weight:700;max-width:190px" class="trunc">${r.name}</td>
       <td class="trunc" style="max-width:140px;color:#94A2BC">${r.btype||'—'}</td>
       <td>${r.mfg||'—'}</td>
       <td>${r.status||'—'}</td>
+      <td>${pctCell(r.pct)}</td>
+      <td class="trunc" style="max-width:150px">${pickCell(r.picking)}</td>
       <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
       <td>${r.priority||'—'}</td>
-      <td>${r.blocker&&r.blocker!=='None'?(/parts/i.test(r.blocker)?`<a class="blk-tag blk-link" href="http://192.168.130.145:5000/picklists/" target="_blank" title="Open Pick List">${r.blocker} ↗</a>`:`<span class="blk-tag">${r.blocker}</span>`):'<span class="dim">—</span>'}</td>
+      <td>${blockerCell(r)}</td>
+      <td style="text-align:right;padding-right:20px">${wdCell(r.wdleft)}</td>
       <td style="white-space:nowrap;color:#94A2BC">${r.golive||'—'}</td>
       <td class="trunc" title="${(r.comment||'').replace(/"/g,'&quot;')}">${r.comment||'—'}</td>
     </tr>`).join('');
 }
 
-function applyFilters(){STATE.filters={btype:document.getElementById('fBtype').value,mfg:document.getElementById('fMfg').value,status:document.getElementById('fStatus').value,rag:document.getElementById('fRag').value};renderLiveBuilds();}
-function resetFilters(){['fBtype','fMfg','fStatus','fRag'].forEach(id=>document.getElementById(id).value='');STATE.filters={btype:'',mfg:'',status:'',rag:''};renderLiveBuilds();}
+// ── Build drill-down modal ────────────────────────────────────────────────────
+function openBuild(i){
+  const r=LAST_RENDERED[i]; if(!r) return;
+  const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const item=(l,v)=>`<div><div class="bd-lbl">${l}</div><div class="bd-val">${v||'<span class="dim">—</span>'}</div></div>`;
+  const ready=[['BOM',r.bom],['WO',r.wo],['Specs / Drawings',r.specs],['Picklist',r.picklist]]
+    .map(([l,v])=>`<span class="bd-pill ${v?'bd-ok':'bd-no'}">${v?'✓':'✕'} ${l}</span>`).join('');
+  document.getElementById('buildModalBody').innerHTML=`
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <h2 style="flex:1">${esc(r.name)}</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeBuild()">✕ Close</button>
+    </div>
+    <div class="modal-sub" style="margin-bottom:10px">${esc(r.btype)||'—'}${r.project?' · '+esc(r.project):''}${r.client?' · '+esc(r.client):''}</div>
+    <div style="margin-bottom:4px">
+      <span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'No RAG'}
+      &nbsp;·&nbsp; ${esc(r.status)||'—'}
+      ${r.blocker&&r.blocker!=='None'?` &nbsp;·&nbsp; ${blockerCell(r)}`:''}
+    </div>
+    <div class="bd-grid">
+      ${item('% Complete',pctCell(r.pct))}
+      ${item('Picking status',pickCell(r.picking))}
+      ${item('Workdays left',wdCell(r.wdleft))}
+      ${item('MFG/Opp',esc(r.mfg))}
+      ${item('Priority',esc(r.priority))}
+      ${item('Qty units',esc(r.qtyu))}
+      ${item('Start',esc(r.startd))}
+      ${item('Finish',esc(r.finishd))}
+      ${item('Go-live target',esc(r.golive))}
+      ${item('Asset #',esc(r.asset))}
+    </div>
+    <div class="bd-lbl">Readiness</div>
+    <div style="margin:6px 0 14px">${ready}</div>
+    <div class="bd-lbl">Latest comment${r.commentDate?' · '+esc(r.commentDate):''}</div>
+    <div class="bd-comment">${esc(r.comment)||'—'}</div>`;
+  document.getElementById('buildOverlay').classList.add('open');
+}
+function closeBuild(){document.getElementById('buildOverlay').classList.remove('open');}
+
+function applyFilters(){STATE.filters={btype:document.getElementById('fBtype').value,mfg:document.getElementById('fMfg').value,status:document.getElementById('fStatus').value,rag:document.getElementById('fRag').value,blocker:document.getElementById('fBlocker').value};renderLiveBuilds();}
+function resetFilters(){['fBtype','fMfg','fStatus','fRag','fBlocker'].forEach(id=>document.getElementById(id).value='');STATE.filters={btype:'',mfg:'',status:'',rag:'',blocker:''};renderLiveBuilds();}
+// Chart click-to-filter: click a segment to filter the whole tab; click again to clear
+function toggleFilter(key, selId, val){
+  if(val===undefined||val===null||val==='—') return;
+  const next = STATE.filters[key]===val ? '' : val;
+  STATE.filters[key]=next;
+  const sel=document.getElementById(selId);
+  if(sel) sel.value=next;
+  renderLiveBuilds();
+}
+const chartPointer=(e,els)=>{e.native.target.style.cursor=els.length?'pointer':'default';};
 function toggleComplete(){STATE.showComplete=!STATE.showComplete;document.getElementById('showCompleteBtn').classList.toggle('on',STATE.showComplete);renderLiveBuilds();}
 function sortBy(key){if(STATE.sortKey===key)STATE.sortAsc=!STATE.sortAsc;else{STATE.sortKey=key;STATE.sortAsc=true;}document.querySelectorAll('[id^=s_]').forEach(el=>el.textContent='');document.getElementById('s_'+key).textContent=STATE.sortAsc?'↑':'↓';renderLiveBuilds();}
 
@@ -1296,6 +1438,7 @@ async function refresh() {
     const {builds, schedBuilds} = processMainSheet(mainRows);
     STATE.builds = builds;
     STATE.scheduleBuilds = schedBuilds;
+    LS.set('cachedBuilds', {builds, schedBuilds}); // offline fallback on next load
 
     // Fetch lookup sheet
     setLoadingTxt('Fetching build hours…');
@@ -1343,7 +1486,7 @@ function showTab(id, el) {
 // ═══════════════════════════════════════════════════════════════════════════════
 (function init(){
   // Close modals on overlay click
-  ['settingsOverlay','hoursOverlay'].forEach(id=>{
+  ['settingsOverlay','hoursOverlay','buildOverlay'].forEach(id=>{
     document.getElementById(id).addEventListener('click',e=>{if(e.target.id===id)document.getElementById(id).classList.remove('open');});
   });
 
