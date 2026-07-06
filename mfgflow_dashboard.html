@@ -450,6 +450,23 @@ tr:hover td{background:rgba(255,255,255,.03)}
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════════════════════
+     PASSPHRASE GATE
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="overlay" id="passOverlay">
+  <div class="modal" style="width:400px">
+    <h2>🔒 MFGFLOW</h2>
+    <div class="modal-sub">This dashboard is protected. Enter the passphrase to load data.</div>
+    <div class="form-group">
+      <input type="password" id="passInput" placeholder="Passphrase…" onkeydown="if(event.key==='Enter')savePass()">
+      <div class="hint" id="passHint" style="display:none;color:#E24B4A">Wrong passphrase — try again.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-blue" onclick="savePass()">Unlock</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS & DEFAULTS
@@ -525,6 +542,7 @@ let STATE = {
   fcWindow: LS.get('fcWindow', 4),             // weeks to show in dept cards
   syncedAt: null,
   apiKey: LS.get('apiKey',''),
+  dashPass: LS.get('dashPass',''),
   sheetMain:   LS.get('sheetMain',   SHEET_MAIN),
   sheetLookup: LS.get('sheetLookup', SHEET_LOOKUP),
 };
@@ -547,7 +565,7 @@ async function ssGet(sheetId) {
   // falls back to its server-side SMARTSHEET_KEY — no key needed here.
   const key = STATE.apiKey;
   const resp = await fetch(`/api/smartsheet?path=sheets/${sheetId}`, {
-    headers: key ? { 'x-smartsheet-key': key } : {}
+    headers: key ? { 'x-smartsheet-key': key } : (STATE.dashPass ? { 'x-dash-pass': STATE.dashPass } : {})
   });
   if (!resp.ok) {
     const err = await resp.json().catch(()=>({}));
@@ -1710,7 +1728,13 @@ async function refresh() {
     renderProjectsTab();
   } catch(e) {
     setSyncStatus('error', e.message);
-    if (STATE.apiKey) {
+    if (!STATE.apiKey && /passphrase/i.test(e.message)) {
+      // Site is passphrase-protected — prompt and retry
+      document.getElementById('passHint').style.display = STATE.dashPass ? 'block' : 'none';
+      document.getElementById('passOverlay').classList.add('open');
+      document.getElementById('passInput').focus();
+      setSyncStatus('stale','🔒 Locked — enter passphrase');
+    } else if (STATE.apiKey) {
       alert('Sync failed: ' + e.message + '\n\nCheck your API key in Settings.');
     } else {
       // No personal key and server key unavailable — fall back to cached data
@@ -1728,6 +1752,15 @@ async function refresh() {
   } finally {
     hideLoading();
   }
+}
+
+function savePass(){
+  const v=document.getElementById('passInput').value.trim();
+  if(!v) return;
+  STATE.dashPass=v;
+  LS.set('dashPass',v);
+  document.getElementById('passOverlay').classList.remove('open');
+  refresh();
 }
 
 function showLoading(txt){const o=document.getElementById('loadingOverlay');o.classList.add('show');setLoadingTxt(txt);}
