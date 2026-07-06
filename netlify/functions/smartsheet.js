@@ -15,7 +15,7 @@ const SERVER_KEY_ALLOWED_PATHS = [
 exports.handler = async (event) => {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'x-smartsheet-key',
+    'Access-Control-Allow-Headers': 'x-smartsheet-key, x-dash-pass',
     'Content-Type': 'application/json',
   };
 
@@ -33,6 +33,13 @@ exports.handler = async (event) => {
   }
   if (!path) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ message: 'Missing path query parameter' }) };
+  }
+  // Keyless (shared-key) access requires the site passphrase, if one is set.
+  // DASH_PASS unset = gate disabled, so deploys are safe before it's configured.
+  if (!userKey && process.env.DASH_PASS) {
+    if (event.headers['x-dash-pass'] !== process.env.DASH_PASS) {
+      return { statusCode: 401, headers: CORS, body: JSON.stringify({ message: 'Passphrase required' }) };
+    }
   }
   // Server key is restricted to the dashboard's own sheets
   if (!userKey && !SERVER_KEY_ALLOWED_PATHS.includes(path)) {
