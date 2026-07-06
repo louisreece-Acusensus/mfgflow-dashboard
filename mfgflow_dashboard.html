@@ -490,10 +490,11 @@ function fmtQuarter(d){return `Q${Math.floor(d.getMonth()/3)+1} ${d.getFullYear(
 // SMARTSHEET API
 // ═══════════════════════════════════════════════════════════════════════════════
 async function ssGet(sheetId) {
+  // Personal key (if set) is sent; otherwise the Netlify function
+  // falls back to its server-side SMARTSHEET_KEY — no key needed here.
   const key = STATE.apiKey;
-  if (!key) throw new Error('No API key set. Click ⚙ Settings.');
   const resp = await fetch(`/api/smartsheet?path=sheets/${sheetId}`, {
-    headers: { 'x-smartsheet-key': key }
+    headers: key ? { 'x-smartsheet-key': key } : {}
   });
   if (!resp.ok) {
     const err = await resp.json().catch(()=>({}));
@@ -1423,11 +1424,6 @@ function setSyncStatus(state,text){
 // REFRESH / FETCH
 // ═══════════════════════════════════════════════════════════════════════════════
 async function refresh() {
-  if (!STATE.apiKey) {
-    setSyncStatus('stale','No API key');
-    openSettings();
-    return;
-  }
   showLoading('Fetching production sheet…');
   setSyncStatus('loading','Syncing…');
   try {
@@ -1461,7 +1457,20 @@ async function refresh() {
     renderForecastTab();
   } catch(e) {
     setSyncStatus('error', e.message);
-    alert('Sync failed: ' + e.message + '\n\nCheck your API key in Settings.');
+    if (STATE.apiKey) {
+      alert('Sync failed: ' + e.message + '\n\nCheck your API key in Settings.');
+    } else {
+      // No personal key and server key unavailable — fall back to cached data
+      const cached = LS.get('cachedBuilds', null);
+      if (cached) {
+        STATE.builds = cached.builds || [];
+        STATE.scheduleBuilds = cached.schedBuilds || [];
+      }
+      populateFilters();
+      renderLiveBuilds();
+      renderForecastTab();
+      setSyncStatus('stale','⚙ Settings — add API key to go live');
+    }
   } finally {
     hideLoading();
   }
@@ -1490,20 +1499,9 @@ function showTab(id, el) {
     document.getElementById(id).addEventListener('click',e=>{if(e.target.id===id)document.getElementById(id).classList.remove('open');});
   });
 
-  if (STATE.apiKey) {
-    refresh();
-  } else {
-    // Load with fallback/cached data
-    const cached = LS.get('cachedBuilds', null);
-    if (cached) {
-      STATE.builds = cached.builds || [];
-      STATE.scheduleBuilds = cached.schedBuilds || [];
-    }
-    populateFilters();
-    renderLiveBuilds();
-    renderForecastTab();
-    setSyncStatus('stale','⚙ Settings — add API key to go live');
-  }
+  // Always try to sync — works keyless via the server-side key,
+  // falls back to cached data if that isn't configured.
+  refresh();
 })();
 </script>
 </body>
