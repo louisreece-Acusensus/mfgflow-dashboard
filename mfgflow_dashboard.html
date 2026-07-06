@@ -173,6 +173,24 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .lookup-table input:focus{background:#1C2840;outline:1px solid #4AA3E0;border-radius:2px}
 .lookup-table .row-label{text-align:left;color:#C9D4E5;padding:4px 8px;font-weight:600;background:#1C2840}
 
+/* ── Projects tab ───────────────────────────────────────────────────────────── */
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.proj-card{background:#18223A;border:1px solid #2A3858;border-left:4px solid #4AA3E0;border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s,transform .15s}
+.proj-card:hover{border-color:#4AA3E0;transform:translateY(-2px)}
+.proj-name{font-size:14px;font-weight:700;color:#E8ECF3;margin-bottom:2px}
+.proj-meta{font-size:11px;color:#94A2BC;margin-bottom:10px}
+.proj-stats{display:flex;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+.proj-stat .v{font-size:20px;font-weight:600;color:#fff;line-height:1.1}
+.proj-stat .l{font-size:10px;color:#94A2BC}
+.proj-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:#1C2840;margin-bottom:8px}
+.proj-foot{font-size:11px;color:#94A2BC;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.rw-row{display:flex;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
+.rw-row:hover{background:rgba(255,255,255,.03)}
+.rw-days{min-width:56px;text-align:center;font-weight:800;font-size:13px;padding:4px 6px;border-radius:7px}
+.kpi{cursor:pointer;transition:box-shadow .1s}
+.kpi:hover{border-color:#4AA3E0}
+.kpi.on{box-shadow:0 0 0 2px #4AA3E0}
+
 /* ── Build detail modal ─────────────────────────────────────────────────────── */
 .bd-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 18px;margin:16px 0}
 .bd-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600;margin-bottom:2px}
@@ -196,8 +214,9 @@ tr:hover td{background:rgba(255,255,255,.03)}
 <!-- ── Nav ──────────────────────────────────────────────────────────────────── -->
 <nav class="nav">
   <div class="nav-brand">MFGFLOW</div>
-  <div class="nav-tab active" onclick="showTab('live',this)">Live Builds</div>
-  <div class="nav-tab" onclick="showTab('forecast',this)">Capacity by Team</div>
+  <div class="nav-tab active" id="navLive" onclick="showTab('live',this)">Live Builds</div>
+  <div class="nav-tab" id="navProjects" onclick="showTab('projects',this)">Projects</div>
+  <div class="nav-tab" id="navForecast" onclick="showTab('forecast',this)">Capacity by Team</div>
   <div class="nav-right">
     <span class="sync-info"><span class="sync-dot" id="syncDot"></span><span id="syncTxt">Not synced</span></span>
     <a class="btn btn-ghost btn-sm" href="http://192.168.130.145:5000/picklists/" target="_blank">📋 Pick List</a>
@@ -223,6 +242,10 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <div class="fg"><label>Status</label><select id="fStatus" onchange="applyFilters()"><option value="">All</option></select></div>
     <div class="fg"><label>RAG</label><select id="fRag" onchange="applyFilters()"><option value="">All</option></select></div>
     <div class="fg"><label>Blocker</label><select id="fBlocker" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>Client</label><select id="fClient" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>PM</label><select id="fPm" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>Project</label><select id="fProject" onchange="applyFilters()"><option value="">All</option></select></div>
+    <div class="fg"><label>Search</label><input type="text" id="fSearch" placeholder="name, asset, comment…" oninput="applyFilters()" style="min-width:160px"></div>
     <div class="fa">
       <button class="btn btn-blue btn-sm" onclick="resetFilters()">Reset</button>
       <button class="btn-toggle" id="showCompleteBtn" onclick="toggleComplete()">Show complete</button>
@@ -234,11 +257,11 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
   <!-- KPIs -->
   <div class="kpi-row">
-    <div class="kpi" style="border-left-color:#D9D9CD"><div class="kpi-lbl">Total builds</div><div class="kpi-val" id="kTotal">—</div></div>
-    <div class="kpi" style="border-left-color:#7ED957"><div class="kpi-lbl">Complete</div><div class="kpi-val" id="kComplete">—</div><div class="kpi-sub" id="kPct">—</div></div>
-    <div class="kpi" style="border-left-color:#E2574F"><div class="kpi-lbl">At risk (R+A)</div><div class="kpi-val" id="kRisk">—</div></div>
-    <div class="kpi" style="border-left-color:#E58C24"><div class="kpi-lbl">Blocked</div><div class="kpi-val" id="kBlocked">—</div></div>
-    <div class="kpi" style="border-left-color:#4AA3E0"><div class="kpi-lbl">Go-live ≤ 30 days</div><div class="kpi-val" id="kSoon">—</div></div>
+    <div class="kpi" style="border-left-color:#D9D9CD" onclick="resetFilters()" title="Click to clear all filters"><div class="kpi-lbl">Total builds</div><div class="kpi-val" id="kTotal">—</div></div>
+    <div class="kpi" id="kCardComplete" style="border-left-color:#7ED957" onclick="kpiComplete()" title="Click to show only complete builds"><div class="kpi-lbl">Complete</div><div class="kpi-val" id="kComplete">—</div><div class="kpi-sub" id="kPct">—</div></div>
+    <div class="kpi" id="kCardRisk" style="border-left-color:#E2574F" onclick="kpiRisk()" title="Click to show only at-risk builds"><div class="kpi-lbl">At risk (R+A)</div><div class="kpi-val" id="kRisk">—</div></div>
+    <div class="kpi" id="kCardBlocked" style="border-left-color:#E58C24" onclick="kpiBlocked()" title="Click to show only blocked builds"><div class="kpi-lbl">Blocked</div><div class="kpi-val" id="kBlocked">—</div></div>
+    <div class="kpi" id="kCardSoon" style="border-left-color:#4AA3E0" onclick="kpiSoon()" title="Click to show only builds going live within 30 days"><div class="kpi-lbl">Go-live ≤ 30 days</div><div class="kpi-val" id="kSoon">—</div></div>
   </div>
 
   <!-- Charts row 1 -->
@@ -290,6 +313,35 @@ tr:hover td{background:rgba(255,255,255,.03)}
       </table>
     </div>
   </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB: PROJECTS
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabProjects">
+  <div class="forecast-hd">
+    <div>
+      <h2>Projects</h2>
+      <div class="sub"><span id="projCount">—</span> projects · click a card to drill into its builds</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:22px">
+    <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <h3>Go-live runway</h3>
+        <div class="card-sub">Upcoming go-live dates · click a build for details</div>
+      </div>
+      <div class="period-grp" style="margin-left:auto">
+        <button class="period-btn rw-btn" data-d="30" onclick="setRunwayWindow(30)">30 days</button>
+        <button class="period-btn rw-btn active" data-d="60" onclick="setRunwayWindow(60)">60 days</button>
+        <button class="period-btn rw-btn" data-d="90" onclick="setRunwayWindow(90)">90 days</button>
+      </div>
+    </div>
+    <div id="runwayList"></div>
+  </div>
+
+  <div class="proj-grid" id="projGrid"></div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -462,7 +514,8 @@ let STATE = {
   lookup: LS.get('lookup', DEFAULT_LOOKUP),
   teams: LS.get('teams', DEFAULT_TEAMS),
   showComplete: false,
-  filters: {btype:'',mfg:'',status:'',rag:'',blocker:''},
+  filters: {btype:'',mfg:'',status:'',rag:'',blocker:'',client:'',pm:'',project:'',q:''},
+  riskOnly:false, blockedOnly:false, soonOnly:false,
   sortKey: 'name', sortAsc: true,
   fcPeriod: 'week',
   deptPeriod: 'week',
@@ -550,6 +603,10 @@ function processMainSheet(rows) {
       startd:  r['Start Date']             || '',
       finishd: r['Finish Date']            || '',
       commentDate: r['Latest Comment Date']|| '',
+      pm:      r['PM']                     || '',
+      elead:   r['Engineering Lead']       || '',
+      float:   r['Float (shipping and extra testing time) (days)'] ?? '',
+      origGolive: r['Original Go-Live']    || '',
     };
     builds.push(b);
 
@@ -612,8 +669,11 @@ function computeWeekData(schedBuilds, lookup, teams) {
       const hpw = total / weeks.length;
       weeks.forEach(w => {
         const iso = w.toISOString().split('T')[0];
-        if (!map[iso]) map[iso] = {weekDate:new Date(w)};
+        if (!map[iso]) map[iso] = {weekDate:new Date(w), _builds:{}};
         map[iso][t.key] = (map[iso][t.key]||0) + hpw;
+        // Track per-build contribution for week drill-down
+        const bb = map[iso]._builds[b.name] = map[iso]._builds[b.name] || {};
+        bb[t.key] = (bb[t.key]||0) + hpw;
       });
     });
   });
@@ -682,24 +742,49 @@ const darkGrid  = {color:'rgba(255,255,255,0.07)'};
 // ═══════════════════════════════════════════════════════════════════════════════
 function getFiltered() {
   const f = STATE.filters;
+  const q = (f.q||'').toLowerCase();
   return STATE.builds.filter(d =>
     (STATE.showComplete || d.status !== 'Complete') &&
     (!f.btype  || d.btype  === f.btype)  &&
     (!f.mfg    || d.mfg    === f.mfg)    &&
     (!f.status || d.status === f.status) &&
     (!f.rag    || d.rag    === f.rag)    &&
-    (!f.blocker|| d.blocker === f.blocker)
+    (!f.blocker|| d.blocker === f.blocker) &&
+    (!f.client || d.client === f.client) &&
+    (!f.pm     || d.pm     === f.pm)     &&
+    (!f.project|| (f.project==='(Unassigned)' ? !d.project : d.project === f.project)) &&
+    (!q || `${d.name} ${d.asset} ${d.project} ${d.comment}`.toLowerCase().includes(q)) &&
+    (!STATE.riskOnly    || d.rag==='Red' || d.rag==='Yellow') &&
+    (!STATE.blockedOnly || (d.blocker && d.blocker!=='None')) &&
+    (!STATE.soonOnly    || isSoon(d))
   );
+}
+
+function isSoon(d){
+  if(!/^\d{4}/.test(d.golive)) return false;
+  const t=new Date(); t.setHours(0,0,0,0);
+  const in30=new Date(t); in30.setDate(t.getDate()+30);
+  const dt=new Date(d.golive);
+  return dt>=t && dt<=in30;
 }
 
 function populateFilters() {
   const uniq = k => [...new Set(STATE.builds.map(d=>d[k]).filter(Boolean))].sort();
-  [['fBtype','btype'],['fMfg','mfg'],['fStatus','status'],['fRag','rag'],['fBlocker','blocker']].forEach(([id,k])=>{
+  [['fBtype','btype'],['fMfg','mfg'],['fStatus','status'],['fRag','rag'],['fBlocker','blocker'],['fClient','client'],['fPm','pm'],['fProject','project']].forEach(([id,k])=>{
     const sel=document.getElementById(id);
+    if(!sel) return;
     const cur=sel.value;
     sel.innerHTML='<option value="">All</option>';
     uniq(k).forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===cur)o.selected=true;sel.appendChild(o);});
   });
+  // Allow drilling into builds with no project assigned
+  if (STATE.builds.some(d=>!d.project)) {
+    const sel=document.getElementById('fProject');
+    const o=document.createElement('option');
+    o.value='(Unassigned)'; o.textContent='(Unassigned)';
+    if(STATE.filters.project==='(Unassigned)') o.selected=true;
+    sel.appendChild(o);
+  }
 }
 
 function renderLiveBuilds() {
@@ -727,6 +812,11 @@ function renderKPIs(data) {
   document.getElementById('kRisk').textContent=data.filter(d=>d.rag==='Red'||d.rag==='Yellow').length;
   document.getElementById('kBlocked').textContent=data.filter(d=>d.blocker&&d.blocker!=='None').length;
   document.getElementById('kSoon').textContent=data.filter(d=>{if(!/^\d{4}/.test(d.golive))return false;const dt=new Date(d.golive);return dt>=today&&dt<=in30;}).length;
+  // Reflect active KPI drill-downs
+  document.getElementById('kCardComplete').classList.toggle('on',STATE.filters.status==='Complete');
+  document.getElementById('kCardRisk').classList.toggle('on',STATE.riskOnly);
+  document.getElementById('kCardBlocked').classList.toggle('on',STATE.blockedOnly);
+  document.getElementById('kCardSoon').classList.toggle('on',STATE.soonOnly);
 }
 
 function tally(arr,key){const m={};arr.forEach(r=>{const v=r[key]||'—';m[v]=(m[v]||0)+1;});return m;}
@@ -903,8 +993,8 @@ function renderTable(data) {
 }
 
 // ── Build drill-down modal ────────────────────────────────────────────────────
-function openBuild(i){
-  const r=LAST_RENDERED[i]; if(!r) return;
+function showBuildModal(r){
+  if(!r) return;
   const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   const item=(l,v)=>`<div><div class="bd-lbl">${l}</div><div class="bd-val">${v||'<span class="dim">—</span>'}</div></div>`;
   const ready=[['BOM',r.bom],['WO',r.wo],['Specs / Drawings',r.specs],['Picklist',r.picklist]]
@@ -930,7 +1020,11 @@ function openBuild(i){
       ${item('Start',esc(String(r.startd||'').split('T')[0]))}
       ${item('Finish',esc(String(r.finishd||'').split('T')[0]))}
       ${item('Go-live target',esc(r.golive))}
+      ${item('Original go-live',esc(r.origGolive))}
+      ${item('Float (days)',esc(r.float!==''&&r.float!==null?String(parseFloat(r.float)):''))}
       ${item('Asset #',esc(r.asset))}
+      ${item('PM',esc(r.pm))}
+      ${item('Eng lead',esc(r.elead))}
     </div>
     <div class="bd-lbl">Readiness</div>
     <div style="margin:6px 0 14px">${ready}</div>
@@ -938,10 +1032,128 @@ function openBuild(i){
     <div class="bd-comment">${esc(r.comment)||'—'}</div>`;
   document.getElementById('buildOverlay').classList.add('open');
 }
+function openBuild(i){showBuildModal(LAST_RENDERED[i]);}
+function openRunwayBuild(i){showBuildModal(RUNWAY_LIST[i]);}
 function closeBuild(){document.getElementById('buildOverlay').classList.remove('open');}
 
-function applyFilters(){STATE.filters={btype:document.getElementById('fBtype').value,mfg:document.getElementById('fMfg').value,status:document.getElementById('fStatus').value,rag:document.getElementById('fRag').value,blocker:document.getElementById('fBlocker').value};renderLiveBuilds();}
-function resetFilters(){['fBtype','fMfg','fStatus','fRag','fBlocker'].forEach(id=>document.getElementById(id).value='');STATE.filters={btype:'',mfg:'',status:'',rag:'',blocker:''};renderLiveBuilds();}
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROJECTS TAB: RUNWAY + ROLLUP CARDS
+// ═══════════════════════════════════════════════════════════════════════════════
+let RUNWAY_LIST=[];
+let runwayDays=60;
+
+function setRunwayWindow(d){
+  runwayDays=d;
+  document.querySelectorAll('.rw-btn').forEach(b=>b.classList.toggle('active',parseInt(b.dataset.d)===d));
+  renderRunway();
+}
+
+function renderProjectsTab(){ renderRunway(); renderProjGrid(); }
+
+function renderRunway(){
+  const el=document.getElementById('runwayList'); if(!el) return;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const end=new Date(today); end.setDate(end.getDate()+runwayDays);
+  RUNWAY_LIST = STATE.builds.filter(d=>{
+    if(d.status==='Complete'||d.status==='Removed') return false;
+    if(!/^\d{4}/.test(d.golive)) return false;
+    const dt=new Date(d.golive); return dt>=today&&dt<=end;
+  }).sort((a,b)=>a.golive.localeCompare(b.golive));
+  if(!RUNWAY_LIST.length){
+    el.innerHTML=`<div style="color:#94A2BC;font-size:12px;padding:8px">No go-lives in the next ${runwayDays} days.</div>`;
+    return;
+  }
+  el.innerHTML=RUNWAY_LIST.map((d,i)=>{
+    const days=Math.round((new Date(d.golive)-today)/86400000);
+    const c=days<=7?'#E24B4A':(days<=21?'#EF9F27':'#7ED957');
+    const fl=parseFloat(d.float);
+    return `<div class="rw-row" onclick="openRunwayBuild(${i})" title="Click for build details">
+      <span class="rw-days" style="background:${c}22;color:${c}">${days}d</span>
+      <span class="rag-dot" style="background:${RAGC[d.rag]||RAGC['']}"></span>
+      <span style="font-weight:700;flex:1;min-width:120px" class="trunc">${d.name}</span>
+      <span style="color:#94A2BC;font-size:11px;max-width:150px" class="trunc">${d.project||d.btype||''}</span>
+      ${!isNaN(fl)?`<span style="font-size:11px;color:${fl<=0?'#E24B4A':'#94A2BC'}">float ${fl}d</span>`:''}
+      ${d.blocker&&d.blocker!=='None'?`<span class="blk-tag">${d.blocker}</span>`:''}
+      <span style="color:#94A2BC;white-space:nowrap;font-size:11px">${d.golive}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderProjGrid(){
+  const grid=document.getElementById('projGrid'); if(!grid) return;
+  const groups={};
+  STATE.builds.forEach(d=>{
+    const p=d.project||'(Unassigned)';
+    (groups[p]=groups[p]||[]).push(d);
+  });
+  const names=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
+  document.getElementById('projCount').textContent=names.length;
+  const SC={'Complete':'#7ED957','In Progress':'#4AA3E0','Not Started':'#8593AD','On  Hold':'#EF9F27','On Hold':'#EF9F27','TBC':'#B8B5AC','Removed':'#5A6784','':'#39466B'};
+  const today=new Date(); today.setHours(0,0,0,0);
+  grid.innerHTML=names.map((p,pi)=>{
+    const bs=groups[p], tot=bs.length;
+    const comp=bs.filter(d=>d.status==='Complete').length;
+    const prog=bs.filter(d=>d.status==='In Progress').length;
+    const blocked=bs.filter(d=>d.blocker&&d.blocker!=='None'&&d.status!=='Complete').length;
+    const risk=bs.filter(d=>(d.rag==='Red'||d.rag==='Yellow')&&d.status!=='Complete').length;
+    const pms=[...new Set(bs.map(d=>d.pm).filter(Boolean))].slice(0,3).join(', ');
+    const clients=[...new Set(bs.map(d=>d.client).filter(Boolean))].join(', ');
+    const segs={};
+    bs.forEach(d=>{const s=d.status||'';segs[s]=(segs[s]||0)+1;});
+    const bar=Object.entries(segs).map(([s,n])=>`<div style="width:${(n/tot*100).toFixed(1)}%;background:${SC[s]||'#5A6784'}" title="${s||'No status'}: ${n}"></div>`).join('');
+    const upcoming=bs.filter(d=>d.status!=='Complete'&&/^\d{4}/.test(d.golive)&&new Date(d.golive)>=today).map(d=>d.golive).sort()[0];
+    const color=PAL[pi%PAL.length];
+    return `<div class="proj-card" style="border-left-color:${color}" onclick="gotoProject('${p.replace(/'/g,"\\'")}')" title="Click to see these builds">
+      <div class="proj-name">${p}</div>
+      <div class="proj-meta">${clients||'—'}${pms?' · PM: '+pms:''}</div>
+      <div class="proj-stats">
+        <div class="proj-stat"><div class="v">${tot}</div><div class="l">builds</div></div>
+        <div class="proj-stat"><div class="v" style="color:#7ED957">${comp}</div><div class="l">complete</div></div>
+        <div class="proj-stat"><div class="v" style="color:#4AA3E0">${prog}</div><div class="l">in prog</div></div>
+        <div class="proj-stat"><div class="v" style="color:${risk?'#EF9F27':'#94A2BC'}">${risk}</div><div class="l">at risk</div></div>
+        <div class="proj-stat"><div class="v" style="color:${blocked?'#E24B4A':'#94A2BC'}">${blocked}</div><div class="l">blocked</div></div>
+      </div>
+      <div class="proj-bar">${bar}</div>
+      <div class="proj-foot"><span>${tot?Math.round(comp/tot*100):0}% complete</span><span>${upcoming?'next go-live '+upcoming:''}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function gotoProject(p){
+  clearAllFilters();
+  STATE.showComplete=true; // show the full project including completed builds
+  document.getElementById('showCompleteBtn').classList.add('on');
+  STATE.filters.project=p;
+  const sel=document.getElementById('fProject');
+  if(sel) sel.value = p;
+  showTab('live', document.getElementById('navLive'));
+  renderLiveBuilds();
+}
+
+function applyFilters(){
+  const v=id=>{const el=document.getElementById(id);return el?el.value:'';};
+  STATE.filters={btype:v('fBtype'),mfg:v('fMfg'),status:v('fStatus'),rag:v('fRag'),blocker:v('fBlocker'),client:v('fClient'),pm:v('fPm'),project:v('fProject'),q:v('fSearch')};
+  renderLiveBuilds();
+}
+function clearAllFilters(){
+  ['fBtype','fMfg','fStatus','fRag','fBlocker','fClient','fPm','fProject','fSearch'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  STATE.filters={btype:'',mfg:'',status:'',rag:'',blocker:'',client:'',pm:'',project:'',q:''};
+  STATE.riskOnly=false; STATE.blockedOnly=false; STATE.soonOnly=false;
+}
+function resetFilters(){clearAllFilters();renderLiveBuilds();}
+
+// ── KPI card drill-downs ─────────────────────────────────────────────────────
+function kpiRisk(){STATE.riskOnly=!STATE.riskOnly;renderLiveBuilds();}
+function kpiBlocked(){STATE.blockedOnly=!STATE.blockedOnly;renderLiveBuilds();}
+function kpiSoon(){STATE.soonOnly=!STATE.soonOnly;renderLiveBuilds();}
+function kpiComplete(){
+  const on = STATE.filters.status==='Complete';
+  STATE.filters.status = on ? '' : 'Complete';
+  STATE.showComplete = !on;
+  const sel=document.getElementById('fStatus'); if(sel) sel.value=STATE.filters.status;
+  document.getElementById('showCompleteBtn').classList.toggle('on',STATE.showComplete);
+  renderLiveBuilds();
+}
 // Chart click-to-filter: click a segment to filter the whole tab; click again to clear
 function toggleFilter(key, selId, val){
   if(val===undefined||val===null||val==='—') return;
@@ -973,11 +1185,13 @@ function setFcWindow(n) {
   renderForecastTab();
 }
 
+let LAST_FUTUREWEEKS=[];
 function renderForecastTab() {
   // Build weekly demand then filter to current week onward
   const allWeeks = computeWeekData(STATE.scheduleBuilds, STATE.lookup, STATE.teams);
   const todayMonday = getMonday(new Date());
   const futureWeeks = allWeeks.filter(w => w.weekDate >= todayMonday);
+  LAST_FUTUREWEEKS = futureWeeks;
   document.getElementById('fcBuildCount').textContent = STATE.scheduleBuilds.length;
   // Sync toggle buttons
   document.getElementById('btnUnitHrs').classList.toggle('active', STATE.displayUnit==='hours');
@@ -1031,7 +1245,7 @@ function renderCapacityGrid(weeks) {
   let html = `<table class="cgrid">
     <thead><tr>
       <th class="cgrid-lbl">Team</th>
-      ${slice.map(w => `<th class="cgrid-wk">${fmtWeek(w.weekDate)}</th>`).join('')}
+      ${slice.map(w => `<th class="cgrid-wk" style="cursor:pointer" onclick="openWeekDrill('${w.iso}')" title="Click: which builds drive this week's demand"><span style="border-bottom:1px dotted #4AA3E0">${fmtWeek(w.weekDate)}</span></th>`).join('')}
     </tr></thead>
     <tbody>`;
 
@@ -1099,12 +1313,13 @@ function renderFactoryChart(data) {
 
   mkChart('cFactory', {type:'bar', data:{labels, datasets:ds}, options:{
     responsive:true, maintainAspectRatio:false,
+    onClick:(_,els)=>{ if(els.length){ const w=data[els[0].index]; if(w&&w.iso) openWeekDrill(w.iso); } },
     plugins:{
       legend:{display:false},
       tooltip:{callbacks:{label:ctx => {
         const u = STATE.displayUnit === 'fte' ? ' FTEs' : 'h';
         if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw}${u} (drag to adjust)`;
-        return `${ctx.dataset.label}: ${ctx.raw}${u}`;
+        return `${ctx.dataset.label}: ${ctx.raw}${u} · click for builds`;
       }}}
     },
     scales:{
@@ -1115,6 +1330,43 @@ function renderFactoryChart(data) {
   }});
 
   attachCapacityDrag('cFactory', data, wc);
+}
+
+// ─── Week drill-down: which builds drive a week's demand ──────────────────────
+function openWeekDrill(iso){
+  const w=(LAST_FUTUREWEEKS||[]).find(x=>x.iso===iso);
+  if(!w) return;
+  const div = STATE.displayUnit==='fte' ? FTE_HRS : 1;
+  const u = STATE.displayUnit==='fte' ? ' FTE' : 'h';
+  const fmt = v => STATE.displayUnit==='fte' ? (v/div).toFixed(1) : String(Math.round(v));
+  const teamName = k => { const t=STATE.teams.find(t=>t.key===k); return t?t.name:k; };
+  const builds=Object.entries(w._builds||{}).map(([name,teams])=>({
+    name, teams, total:Object.values(teams).reduce((s,v)=>s+v,0)
+  })).sort((a,b)=>b.total-a.total);
+  const total=builds.reduce((s,b)=>s+b.total,0);
+  const cap=totalCapForWeek(w.weekDate);
+  const over=total>cap;
+  const rows=builds.map(b=>`
+    <div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">
+        <span style="font-weight:700;flex:1" class="trunc">${b.name}</span>
+        <span style="color:#4AA3E0;font-weight:700;white-space:nowrap">${fmt(b.total)}${u}</span>
+      </div>
+      <div style="font-size:11px;color:#94A2BC;margin-top:3px">${Object.entries(b.teams).filter(([,v])=>v>=0.5).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${teamName(k)} ${fmt(v)}${u}`).join(' · ')}</div>
+    </div>`).join('');
+  document.getElementById('buildModalBody').innerHTML=`
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <h2 style="flex:1">Week of ${fmtWeek(w.weekDate)}</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeBuild()">✕ Close</button>
+    </div>
+    <div class="modal-sub" style="margin-bottom:6px">${builds.length} builds driving demand this week</div>
+    <div style="margin-bottom:10px;font-size:13px">
+      Demand <span style="font-weight:700;color:${over?'#E24B4A':'#7ED957'}">${fmt(total)}${u}</span>
+      vs capacity <span style="font-weight:700">${fmt(cap)}${u}</span>
+      ${over?`<span class="bd-pill bd-no" style="margin-left:8px">+${fmt(total-cap)}${u} OVER</span>`:`<span class="bd-pill bd-ok" style="margin-left:8px">OK</span>`}
+    </div>
+    ${rows||'<div class="dim">No demand this week.</div>'}`;
+  document.getElementById('buildOverlay').classList.add('open');
 }
 
 // ─── Draggable capacity line ───────────────────────────────────────────────────
@@ -1455,6 +1707,7 @@ async function refresh() {
     populateFilters();
     renderLiveBuilds();
     renderForecastTab();
+    renderProjectsTab();
   } catch(e) {
     setSyncStatus('error', e.message);
     if (STATE.apiKey) {
@@ -1469,6 +1722,7 @@ async function refresh() {
       populateFilters();
       renderLiveBuilds();
       renderForecastTab();
+      renderProjectsTab();
       setSyncStatus('stale','⚙ Settings — add API key to go live');
     }
   } finally {
@@ -1488,6 +1742,7 @@ function showTab(id, el) {
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab'+id.charAt(0).toUpperCase()+id.slice(1)).classList.add('active');
   el.classList.add('active');
+  if(id==='projects') renderProjectsTab();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
