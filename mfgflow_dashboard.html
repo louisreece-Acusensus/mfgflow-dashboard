@@ -6,6 +6,7 @@
 <title>MFGFLOW Production Dashboard</title>
 <!-- v2026-07-03: build drill-down modal · % complete/picking/days-left columns · chart click-to-filter -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <style>
 /* ── Reset & base ──────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -146,6 +147,28 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .person-cap-edit:focus{border-color:#4AA3E0;color:#4AA3E0}
 .add-person-btn{font-size:11px;color:#4AA3E0;background:transparent;border:none;cursor:pointer;padding:4px 0;width:100%;text-align:left;margin-top:4px}
 .add-person-btn:hover{opacity:.8}
+/* ── Team blockers section ── */
+.blk-section{border-top:1px solid #2A3858;padding-top:10px;margin-top:10px}
+.blk-section-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.blk-section-hd span{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#94A2BC;font-weight:600}
+.raise-btn{font-size:11px;color:#4AA3E0;background:transparent;border:1px solid rgba(74,163,224,.3);border-radius:5px;cursor:pointer;padding:2px 8px}
+.raise-btn:hover{background:rgba(74,163,224,.1)}
+.blk-item{display:flex;align-items:flex-start;gap:6px;padding:5px 0;border-bottom:1px solid rgba(42,56,88,.5);font-size:11px}
+.blk-item:last-child{border-bottom:none}
+.blk-dot{width:6px;height:6px;border-radius:50%;background:#E24B4A;flex-shrink:0;margin-top:3px}
+.blk-dot.local{background:#E58C24}
+.blk-build{font-weight:600;color:#E8ECF3;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.blk-type{color:#E24B4A;font-size:10px;white-space:nowrap}
+.blk-type.local{color:#E58C24}
+.blk-dismiss{font-size:10px;color:#5A6784;background:transparent;border:none;cursor:pointer;padding:0 2px;flex-shrink:0}
+.blk-dismiss:hover{color:#E24B4A}
+.blk-empty{font-size:11px;color:#5A6784;font-style:italic;padding:4px 0}
+.raise-form{background:#111C30;border:1px solid #2A3858;border-radius:8px;padding:10px;margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.raise-form input,.raise-form select{background:#1C2840;border:1px solid #2A3858;border-radius:5px;color:#E8ECF3;font-size:11px;padding:4px 7px;width:100%}
+.raise-form-row{display:flex;gap:6px}
+.raise-form-row button{font-size:11px;padding:4px 10px;border-radius:5px;cursor:pointer;border:1px solid;font-weight:600}
+.raise-submit{background:#4AA3E0;color:#0B1322;border-color:#4AA3E0}
+.raise-cancel{background:transparent;color:#94A2BC;border-color:#2A3858}
 .del-person{background:transparent;border:none;color:#E24B4A;font-size:13px;cursor:pointer;opacity:.5;padding:0 2px;flex-shrink:0}
 .del-person:hover{opacity:1}
 
@@ -215,7 +238,6 @@ tr:hover td{background:rgba(255,255,255,.03)}
 <nav class="nav">
   <div class="nav-brand">MFGFLOW</div>
   <div class="nav-tab active" id="navLive" onclick="showTab('live',this)">Live Builds</div>
-  <div class="nav-tab" id="navProjects" onclick="showTab('projects',this)">Projects</div>
   <div class="nav-tab" id="navForecast" onclick="showTab('forecast',this)">Capacity by Team</div>
   <div class="nav-right">
     <span class="sync-info"><span class="sync-dot" id="syncDot"></span><span id="syncTxt">Not synced</span></span>
@@ -264,13 +286,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <div class="kpi" id="kCardSoon" style="border-left-color:#4AA3E0" onclick="kpiSoon()" title="Click to show only builds going live within 30 days"><div class="kpi-lbl">Go-live ≤ 30 days</div><div class="kpi-val" id="kSoon">—</div></div>
   </div>
 
-  <!-- Charts row 1 -->
-  <div class="grid2">
-    <div class="card"><h3>Builds by type</h3><div class="card-sub">Distribution of build types · click a segment to filter</div><div class="ch260"><canvas id="cType"></canvas></div></div>
-    <div class="card"><h3>Build status</h3><div class="card-sub">Status distribution · click a bar to filter</div><div class="ch260"><canvas id="cStatus"></canvas></div></div>
-  </div>
-
-  <!-- Charts row 2 -->
+  <!-- Charts row 2 (RAG + Blockers stay at top) -->
   <div class="grid2">
     <div class="card"><h3>Schedule health (RAG)</h3><div class="card-sub">Overall project health · click a segment to filter</div><div class="ch260"><canvas id="cRag"></canvas></div></div>
     <div class="card"><h3>Primary blockers</h3><div class="card-sub">Active blocker types · click to filter (Parts → Pick List)</div><div class="ch260"><canvas id="cBlock"></canvas></div></div>
@@ -300,6 +316,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
           <th onclick="sortBy('btype')">Type <span id="s_btype"></span></th>
           <th onclick="sortBy('mfg')">MFG/Opp <span id="s_mfg"></span></th>
           <th onclick="sortBy('status')">Status <span id="s_status"></span></th>
+          <th onclick="sortBy('finishd')">Finish Date <span id="s_finishd">↑</span></th>
           <th onclick="sortBy('pct')">% Compl <span id="s_pct"></span></th>
           <th onclick="sortBy('picking')">Picking <span id="s_picking"></span></th>
           <th onclick="sortBy('rag')">RAG <span id="s_rag"></span></th>
@@ -313,20 +330,9 @@ tr:hover td{background:rgba(255,255,255,.03)}
       </table>
     </div>
   </div>
-</div>
 
-<!-- ══════════════════════════════════════════════════════════════════════════
-     TAB: PROJECTS
-══════════════════════════════════════════════════════════════════════════════ -->
-<div class="tab-panel" id="tabProjects">
-  <div class="forecast-hd">
-    <div>
-      <h2>Projects</h2>
-      <div class="sub"><span id="projCount">—</span> projects · click a card to drill into its builds</div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:22px">
+  <!-- Go-live runway (merged from Projects) -->
+  <div class="card" style="margin-bottom:20px">
     <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div>
         <h3>Go-live runway</h3>
@@ -341,7 +347,15 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <div id="runwayList"></div>
   </div>
 
+  <!-- Project cards (merged from Projects) -->
+  <div style="font-size:11px;color:#94A2BC;margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:1px"><span id="projCount">—</span> projects</div>
   <div class="proj-grid" id="projGrid"></div>
+
+  <!-- Charts row 1 (Builds by type + Build status at bottom) -->
+  <div class="grid2" style="margin-top:20px">
+    <div class="card"><h3>Builds by type</h3><div class="card-sub">Distribution of build types · click a segment to filter</div><div class="ch260"><canvas id="cType"></canvas></div></div>
+    <div class="card"><h3>Build status</h3><div class="card-sub">Status distribution · click a bar to filter</div><div class="ch260"><canvas id="cStatus"></canvas></div></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════════════════
@@ -533,13 +547,14 @@ let STATE = {
   showComplete: false,
   filters: {btype:'',mfg:'',status:'',rag:'',blocker:'',client:'',pm:'',project:'',q:''},
   riskOnly:false, blockedOnly:false, soonOnly:false,
-  sortKey: 'name', sortAsc: true,
+  sortKey: 'finishd', sortAsc: true,
   fcPeriod: 'week',
   deptPeriod: 'week',
   fcCapacity: LS.get('fcCapacity', null),      // null = use computed totalCap()
   teamWeekCaps: LS.get('teamWeekCaps', {}),    // {teamKey:YYYY-MM-DD: hours}
   displayUnit: LS.get('displayUnit', 'hours'), // 'hours' or 'fte'
   fcWindow: LS.get('fcWindow', 4),             // weeks to show in dept cards
+  teamBlockers: LS.get('teamBlockers', {}),   // {teamKey: [{build,type,note,raisedAt}]}
   syncedAt: null,
   apiKey: LS.get('apiKey',''),
   dashPass: LS.get('dashPass',''),
@@ -815,15 +830,17 @@ function renderLiveBuilds() {
   renderBlockChart(data);
   renderFcChart();
   renderTable(data);
+  renderProjectsTab();
 }
 
 function renderKPIs(data) {
   const today=new Date(); today.setHours(0,0,0,0);
   const in30=new Date(today); in30.setDate(in30.getDate()+30);
   const tot=data.length;
-  // Complete always counted from ALL builds (not filtered), so it's never 0
+  // Complete counted from ALL builds; % excludes Removed so it's meaningful
   const comp=STATE.builds.filter(d=>d.status==='Complete').length;
-  const compPct=STATE.builds.length?Math.round(comp/STATE.builds.length*100):0;
+  const compBase=STATE.builds.filter(d=>d.status!=='Removed').length;
+  const compPct=compBase?Math.round(comp/compBase*100):0;
   document.getElementById('kTotal').textContent=tot;
   document.getElementById('kComplete').textContent=comp;
   document.getElementById('kPct').textContent=compPct+'%';
@@ -851,7 +868,8 @@ function renderTypeChart(data){
       tooltip:{callbacks:{
         title: ctx => ctx[0].label,
         label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%) · click to filter`
-      }}
+      }},
+      datalabels:{color:'#E8ECF3',font:{size:12,weight:'700'},formatter:v=>v>1?v:null}
     }}});
 }
 function renderStatusChart(data){
@@ -864,7 +882,8 @@ function renderStatusChart(data){
       onHover:chartPointer,
       plugins:{
       legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} build${ctx.raw===1?'':'s'} · click to filter`}}
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.raw} build${ctx.raw===1?'':'s'} · click to filter`}},
+      datalabels:{color:'#E8ECF3',font:{size:12,weight:'700'},anchor:'end',align:'end',offset:-2,formatter:v=>v>0?v:null}
     },scales:{x:{grid:{display:false},ticks:darkTicks},y:{grid:darkGrid,ticks:{...darkTicks,precision:0}}}}});
 }
 function renderRagChart(data){
@@ -879,7 +898,8 @@ function renderRagChart(data){
       tooltip:{callbacks:{
         title: ctx => ctx[0].label + ' state',
         label: ctx => ` ${ctx.raw} build${ctx.raw===1?'':'s'} (${Math.round(ctx.raw/total*100)}%) · click to filter`
-      }}
+      }},
+      datalabels:{color:'#E8ECF3',font:{size:12,weight:'700'},formatter:v=>v>1?v:null}
     }}});
 }
 function renderBlockChart(data){
@@ -896,7 +916,8 @@ function renderBlockChart(data){
           const n=ctx.raw, lbl=ctx.label;
           const suffix = isPartsAvail(lbl) ? '  →  Click to open Pick List' : '  · click to filter';
           return `${lbl}: ${n} build${n===1?'':'s'}${suffix}`;
-        }}}
+        }}},
+        datalabels:{color:'#E8ECF3',font:{size:12,weight:'700'},anchor:'end',align:'end',offset:-2,formatter:v=>v>0?v:null}
       },
       onClick:(_,els)=>{
         if(!els.length) return;
@@ -940,7 +961,7 @@ function renderFcChart(){
     STATE.teams.map(t=>`<span><span class="lsw" style="background:${t.color}"></span>${t.name}</span>`).join('') +
     `<span style="font-weight:700"><span class="lln"></span>Capacity</span>`;
   mkChart('cFc',{type:'bar',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+    plugins:{legend:{display:false},datalabels:{display:false},tooltip:{callbacks:{label:ctx=>{
       if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw} FTEs (${Math.round(ctx.raw*HRS)}h)`;
       return `${ctx.dataset.label}: ${ctx.raw} FTEs`;
     }}}},
@@ -999,6 +1020,7 @@ function renderTable(data) {
       <td class="trunc" style="max-width:140px;color:#94A2BC">${r.btype||'—'}</td>
       <td>${r.mfg||'—'}</td>
       <td>${r.status||'—'}</td>
+      <td style="white-space:nowrap;color:#4AA3E0;font-weight:600">${r.finishd||'—'}</td>
       <td>${pctCell(r.pct)}</td>
       <td class="trunc" style="max-width:150px">${pickCell(r.picking)}</td>
       <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
@@ -1334,6 +1356,7 @@ function renderFactoryChart(data) {
     onClick:(_,els)=>{ if(els.length){ const w=data[els[0].index]; if(w&&w.iso) openWeekDrill(w.iso); } },
     plugins:{
       legend:{display:false},
+      datalabels:{display:false},
       tooltip:{callbacks:{label:ctx => {
         const u = STATE.displayUnit === 'fte' ? ' FTEs' : 'h';
         if(ctx.dataset.label==='Capacity') return `Capacity: ${ctx.raw}${u} (drag to adjust)`;
@@ -1536,10 +1559,12 @@ function renderDeptCards(data) {
       <div class="people-hd"><span>Team members</span></div>
       <div id="people_${t.key}"></div>
       <button class="add-person-btn" onclick="addPerson(${ti})">+ Add person</button>
+      <div class="blk-section" id="blk_${t.key}"></div>
     `;
     grid.appendChild(card);
 
     renderPeopleList(ti);
+    renderTeamBlockers(ti);
 
     if(charts[`dc_${t.key}`]) charts[`dc_${t.key}`].destroy();
     charts[`dc_${t.key}`] = new Chart(document.getElementById(`dc_${t.key}`).getContext('2d'),{
@@ -1549,7 +1574,7 @@ function renderDeptCards(data) {
         {type:'line',data:capLine,borderColor:'#E2574F',borderDash:[5,3],borderWidth:1.5,pointRadius:0,fill:false,label:'Cap'}
       ]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+        plugins:{legend:{display:false},datalabels:{display:false},tooltip:{callbacks:{label:ctx=>{
           if(ctx.dataset.label==='Cap') return `Cap: ${ctx.raw}${unitSfx}`;
           const c=capLine[ctx.dataIndex];
           return `${ctx.raw.toFixed(1)}${unitSfx}`+(ctx.raw>c?` (+${(ctx.raw-c).toFixed(1)}${unitSfx} OVER)`:' ✓ SAFE');
@@ -1579,6 +1604,98 @@ function renderPeopleList(ti) {
       </div>
       <button class="del-person" onclick="deletePerson(${ti},${pi})" title="Remove">✕</button>
     </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TEAM BLOCKERS
+// ═══════════════════════════════════════════════════════════════════════════════
+const BLOCKER_TYPES = ['Parts/availability','Engineering Sign off','Build Space','Build Resource','Picking Resource','Parts/ECN change','Design Change','Customer Hold','Other'];
+
+function getSmartsheetBlockers(team) {
+  // Builds from main sheet that are blocked and involve this team (via lookup)
+  return STATE.builds.filter(b =>
+    b.blocker && b.blocker !== 'None' && b.status !== 'Complete' && b.status !== 'Removed' &&
+    ((STATE.lookup[b.btype] || {})[team.key] > 0)
+  );
+}
+
+function renderTeamBlockers(ti) {
+  const t = STATE.teams[ti];
+  const el = document.getElementById(`blk_${t.key}`);
+  if (!el) return;
+  const ssBlockers = getSmartsheetBlockers(t);
+  const localBlockers = (STATE.teamBlockers[t.key] || []);
+  const total = ssBlockers.length + localBlockers.length;
+
+  let html = `<div class="blk-section-hd">
+    <span>Blockers${total ? ` (${total})` : ''}</span>
+    <button class="raise-btn" onclick="showRaiseForm('${t.key}')">+ Raise blocker</button>
+  </div>`;
+
+  if (!total) {
+    html += `<div class="blk-empty">No active blockers</div>`;
+  } else {
+    ssBlockers.forEach(b => {
+      html += `<div class="blk-item">
+        <div class="blk-dot"></div>
+        <div style="flex:1;min-width:0">
+          <div class="blk-build" title="${b.name}">${b.name}</div>
+          <div class="blk-type">${b.blocker}</div>
+        </div>
+      </div>`;
+    });
+    localBlockers.forEach((b, idx) => {
+      const d = new Date(b.raisedAt);
+      const when = `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}`;
+      html += `<div class="blk-item">
+        <div class="blk-dot local"></div>
+        <div style="flex:1;min-width:0">
+          <div class="blk-build" title="${b.build}">${b.build}</div>
+          <div class="blk-type local">${b.type}${b.note ? ' · ' + b.note : ''} <span style="color:#5A6784">· ${when}</span></div>
+        </div>
+        <button class="blk-dismiss" onclick="dismissTeamBlocker('${t.key}',${idx})" title="Dismiss">✕</button>
+      </div>`;
+    });
+  }
+
+  html += `<div id="raiseFrm_${t.key}" style="display:none">
+    <div class="raise-form">
+      <input id="rf_build_${t.key}" type="text" placeholder="Build name or asset #">
+      <select id="rf_type_${t.key}">
+        ${BLOCKER_TYPES.map(bt=>`<option>${bt}</option>`).join('')}
+      </select>
+      <input id="rf_note_${t.key}" type="text" placeholder="Note (optional)">
+      <div class="raise-form-row">
+        <button class="raise-submit" onclick="submitBlocker('${t.key}')">Raise</button>
+        <button class="raise-cancel" onclick="hideRaiseForm('${t.key}')">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+
+  el.innerHTML = html;
+}
+
+function showRaiseForm(key) { const f=document.getElementById(`raiseFrm_${key}`); if(f){f.style.display='';document.getElementById(`rf_build_${key}`).focus();} }
+function hideRaiseForm(key) { const f=document.getElementById(`raiseFrm_${key}`); if(f) f.style.display='none'; }
+
+function submitBlocker(key) {
+  const build = (document.getElementById(`rf_build_${key}`)?.value||'').trim();
+  if (!build) { document.getElementById(`rf_build_${key}`).focus(); return; }
+  const type  = document.getElementById(`rf_type_${key}`)?.value || 'Other';
+  const note  = (document.getElementById(`rf_note_${key}`)?.value||'').trim();
+  if (!STATE.teamBlockers[key]) STATE.teamBlockers[key] = [];
+  STATE.teamBlockers[key].push({ build, type, note, raisedAt: Date.now() });
+  LS.set('teamBlockers', STATE.teamBlockers);
+  const ti = STATE.teams.findIndex(t => t.key === key);
+  if (ti >= 0) renderTeamBlockers(ti);
+}
+
+function dismissTeamBlocker(key, idx) {
+  if (!STATE.teamBlockers[key]) return;
+  STATE.teamBlockers[key].splice(idx, 1);
+  LS.set('teamBlockers', STATE.teamBlockers);
+  const ti = STATE.teams.findIndex(t => t.key === key);
+  if (ti >= 0) renderTeamBlockers(ti);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1775,7 +1892,6 @@ function showTab(id, el) {
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab'+id.charAt(0).toUpperCase()+id.slice(1)).classList.add('active');
   el.classList.add('active');
-  if(id==='projects') renderProjectsTab();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
