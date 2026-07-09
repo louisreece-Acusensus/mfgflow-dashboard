@@ -878,11 +878,8 @@ function renderTypeChart(data){
 }
 function renderStatusChart(data){
   const s=tally(data,'status');
-  // Preferred order first, then ANY other status found in the data
-  // (handles Smartsheet quirks like "On  Hold" double-space and new picklist values)
-  const pref=['Not Started','In Progress','On  Hold','On Hold','Blocked','TBC','Removed'].concat(STATE.showComplete?['Complete']:[]);
-  const extras=Object.keys(s).filter(x=>x!=='—'&&!pref.includes(x)&&(STATE.showComplete||x!=='Complete'));
-  const sl=pref.filter(x=>s[x]).concat(extras);
+  const order=['Not Started','In Progress','On Hold','TBC','Removed'].concat(STATE.showComplete?['Complete']:[]);
+  const sl=order.filter(x=>s[x]);
   mkChart('cStatus',{type:'bar',data:{labels:sl,datasets:[{data:sl.map(x=>s[x]),backgroundColor:'#4AA3E0',borderRadius:4}]},
     options:{responsive:true,maintainAspectRatio:false,
       onClick:(_,els)=>{if(els.length)toggleFilter('status','fStatus',sl[els[0].index]);},
@@ -1012,22 +1009,11 @@ function blockerCell(r){
 
 let LAST_RENDERED=[];
 function renderTable(data) {
-  const NUMERIC_COLS=['pct','wdleft','qtyu','float'];
   const sorted=[...data].sort((a,b)=>{
     const av=a[STATE.sortKey]??'', bv=b[STATE.sortKey]??'';
-    let cmp;
-    if(NUMERIC_COLS.includes(STATE.sortKey)){
-      // True numeric sort; blanks always last
-      const an=parseFloat(String(av).replace('%','')), bn=parseFloat(String(bv).replace('%',''));
-      const aN=isNaN(an), bN=isNaN(bn);
-      if(aN&&bN) cmp=0;
-      else if(aN) return 1;
-      else if(bN) return -1;
-      else cmp=an-bn;
-    } else {
-      // Natural sort for text: "Trailer #2" before "Trailer #10"
-      cmp=String(av).localeCompare(String(bv),undefined,{numeric:true,sensitivity:'base'});
-    }
+    const an=parseFloat(String(av).replace('%','')), bn=parseFloat(String(bv).replace('%',''));
+    const bothNum=!isNaN(an)&&!isNaN(bn)&&String(av).trim()!==''&&String(bv).trim()!=='';
+    const cmp=bothNum?an-bn:String(av).localeCompare(String(bv));
     return STATE.sortAsc?cmp:-cmp;
   });
   LAST_RENDERED=sorted;
@@ -1146,7 +1132,7 @@ function renderProjGrid(){
   });
   const names=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
   document.getElementById('projCount').textContent=names.length;
-  const SC={'Complete':'#7ED957','In Progress':'#4AA3E0','Not Started':'#8593AD','On  Hold':'#EF9F27','On Hold':'#EF9F27','Blocked':'#E24B4A','TBC':'#B8B5AC','Removed':'#5A6784','':'#39466B'};
+  const SC={'Complete':'#7ED957','In Progress':'#4AA3E0','Not Started':'#8593AD','On  Hold':'#EF9F27','On Hold':'#EF9F27','TBC':'#B8B5AC','Removed':'#5A6784','':'#39466B'};
   const today=new Date(); today.setHours(0,0,0,0);
   grid.innerHTML=names.map((p,pi)=>{
     const bs=groups[p], tot=bs.length;
