@@ -593,7 +593,7 @@ function sheetToRows(sheet) {
   const colById = {};
   sheet.columns.forEach(c => { colById[c.id] = c.title; });
   return sheet.rows.map(row => {
-    const obj = {};
+    const obj = { _parentId: row.parentId ?? null, _rowId: row.id };
     row.cells.forEach(cell => {
       const title = colById[cell.columnId];
       if (title) obj[title] = cell.displayValue ?? cell.value ?? null;
@@ -607,7 +607,10 @@ function sheetToRows(sheet) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function processMainSheet(rows) {
   const builds = [], schedBuilds = [];
+  // Detect if sheet has hierarchy — if any row has a parentId, filter to children only
+  const hasHierarchy = rows.some(r => r._parentId != null);
   rows.forEach(r => {
+    if (hasHierarchy && r._parentId == null) return; // skip parent/summary rows
     const name  = r['Task Name']   || '';
     const btype = r['Build Type']  || '';
     if (!name || !btype) return;
