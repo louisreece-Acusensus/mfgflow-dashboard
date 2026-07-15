@@ -238,6 +238,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 <nav class="nav">
   <div class="nav-brand">MFGFLOW</div>
   <div class="nav-tab active" id="navLive" onclick="showTab('live',this)">Live Builds</div>
+  <div class="nav-tab" id="navTrials" onclick="showTab('trials',this)">Trials &amp; Opps</div>
   <div class="nav-tab" id="navForecast" onclick="showTab('forecast',this)">Capacity by Team</div>
   <div class="nav-right">
     <span class="sync-info"><span class="sync-dot" id="syncDot"></span><span id="syncTxt">Not synced</span></span>
@@ -355,6 +356,53 @@ tr:hover td{background:rgba(255,255,255,.03)}
   <div class="grid2" style="margin-top:20px">
     <div class="card"><h3>Builds by type</h3><div class="card-sub">Distribution of build types · click a segment to filter</div><div class="ch260"><canvas id="cType"></canvas></div></div>
     <div class="card"><h3>Build status</h3><div class="card-sub">Status distribution · click a bar to filter</div><div class="ch260"><canvas id="cStatus"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     TAB: TRIALS & OPPS
+══════════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tabTrials">
+
+  <div class="forecast-hd">
+    <div>
+      <h2>Trials &amp; Opportunities</h2>
+      <div class="sub"><span id="toCount">—</span> trial &amp; opp builds · flags from the "Picking Start target" column in Smartsheet</div>
+    </div>
+  </div>
+
+  <!-- Picking-due flags -->
+  <div class="card" style="margin-bottom:22px">
+    <h3>⚑ Picking due — high-priority trials</h3>
+    <div class="card-sub">High-priority trials with a start date whose picking start target is within 10 days (or overdue)</div>
+    <div id="trialFlags"></div>
+  </div>
+
+  <!-- Category-split resource chart -->
+  <div class="card" style="margin-bottom:22px">
+    <div class="fc-hd">
+      <div><h3>Resource demand — MFG / Trial / Opp</h3><div class="card-sub" style="margin-bottom:0">Weekly FTEs stacked by category · toggle buttons to filter · capacity line = red</div></div>
+      <div class="period-grp" style="margin-left:auto">
+        <button class="period-btn cat-btn active" data-cat="MFG" onclick="toggleCat('MFG')"><span class="lsw" style="background:#4AA3E0"></span>MFG</button>
+        <button class="period-btn cat-btn active" data-cat="Trial" onclick="toggleCat('Trial')"><span class="lsw" style="background:#8B7FE8"></span>Trial</button>
+        <button class="period-btn cat-btn active" data-cat="Opp" onclick="toggleCat('Opp')"><span class="lsw" style="background:#E58C24"></span>Opp</button>
+      </div>
+    </div>
+    <div class="scroll"><div class="ch340"><canvas id="cCat"></canvas></div></div>
+  </div>
+
+  <!-- Trials & Opps table -->
+  <div class="card">
+    <h3 id="toTableTitle">Trials &amp; Opps · click a row for details</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Build</th><th>Category</th><th>Type</th><th>Project</th><th>Status</th>
+          <th>Priority</th><th>Picking</th><th>Pick target</th><th>Start</th><th>Go-live</th>
+        </tr></thead>
+        <tbody id="toBody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -488,7 +536,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
 const SHEET_MAIN   = '6805949508439940';
 const SHEET_LOOKUP = '2372330635349892';
 const HRS          = 30; // hrs per FTE per week (6h/day × 5 days)
-const FTE_HRS      = 50; // 1 FTE = 50 hours (unit toggle)
+const FTE_HRS      = 30; // 1 FTE = 30 hours/week — consistent across all tabs
 
 const RAGC = {Red:'#E24B4A',Yellow:'#EF9F27',Green:'#639922',Gray:'#B8B5AC','':'#D9D9CD'};
 const PAL  = ['#4AA3E0','#8B7FE8','#3FC1C9','#5BD1A6','#7ED957','#C0E862','#6C8CE0','#36D6D0','#A9CBE3','#E58C24','#F4C77E'];
@@ -558,6 +606,7 @@ let STATE = {
   syncedAt: null,
   apiKey: LS.get('apiKey',''),
   dashPass: LS.get('dashPass',''),
+  catShow: LS.get('catShow',{MFG:true,Trial:true,Opp:true}),
   sheetMain:   LS.get('sheetMain',   SHEET_MAIN),
   sheetLookup: LS.get('sheetLookup', SHEET_LOOKUP),
 };
@@ -650,6 +699,7 @@ function processMainSheet(rows) {
       startd:  r['Start Date']             || '',
       finishd: r['Finish Date']            || '',
       commentDate: r['Latest Comment Date']|| '',
+      pickTarget: r['Picking Start target']|| '',
       pm:      r['PM']                     || '',
       elead:   r['Engineering Lead']       || '',
       float:   r['Float (shipping and extra testing time) (days)'] ?? '',
@@ -662,7 +712,14 @@ function processMainSheet(rows) {
     const finish = r['Finish Date'];
     const qty    = parseFloat(r['Qty Units']) || 1;
     if (start && finish && btype !== 'Manual Hrs Entry') {
-      schedBuilds.push({name, btype, start, finish, qty, status:b.status, project:b.project});
+      // Skip rows whose dates don't parse (e.g. text typed into a date column)
+      // — one bad cell in Smartsheet must not kill the whole forecast.
+      const sd = new Date(start), fd = new Date(finish);
+      if (!isNaN(sd) && !isNaN(fd)) {
+        schedBuilds.push({name, btype, start, finish, qty, status:b.status, project:b.project, mfg:b.mfg});
+      } else {
+        console.warn('Skipping build with invalid date:', name, start, finish);
+      }
     }
   });
   return {builds, schedBuilds};
@@ -706,6 +763,7 @@ function computeWeekData(schedBuilds, lookup, teams) {
     const qty = b.qty || 1;
     const start = getMonday(new Date(b.start));
     const finish = new Date(b.finish);
+    if (isNaN(start) || isNaN(finish)) return; // defensive: never crash on bad dates
     const weeks = [];
     const cur = new Date(start);
     while (cur <= finish) { weeks.push(new Date(cur)); cur.setDate(cur.getDate()+7); }
@@ -791,6 +849,7 @@ function getFiltered() {
   const f = STATE.filters;
   const q = (f.q||'').toLowerCase();
   return STATE.builds.filter(d =>
+    (d.startd || d.finishd) &&   // Live Builds ignores undated rows (they still show on Trials & Opps)
     (STATE.showComplete || d.status !== 'Complete') &&
     (!f.btype  || d.btype  === f.btype)  &&
     (!f.mfg    || d.mfg    === f.mfg)    &&
@@ -1048,7 +1107,7 @@ function renderTable(data) {
       <td class="trunc" style="max-width:140px;color:#94A2BC">${r.btype||'—'}</td>
       <td>${r.mfg||'—'}</td>
       <td>${r.status||'—'}</td>
-      <td style="white-space:nowrap;color:#4AA3E0;font-weight:600">${r.finishd||'—'}</td>
+      <td style="white-space:nowrap;color:#4AA3E0;font-weight:600">${String(r.finishd||'').split('T')[0]||'—'}</td>
       <td>${pctCell(r.pct)}</td>
       <td class="trunc" style="max-width:150px">${pickCell(r.picking)}</td>
       <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
@@ -1156,7 +1215,7 @@ function renderProjGrid(){
   });
   const names=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
   document.getElementById('projCount').textContent=names.length;
-  const SC={'Complete':'#7ED957','In Progress':'#4AA3E0','Not Started':'#8593AD','On  Hold':'#EF9F27','On Hold':'#EF9F27','Blocked':'#E24B4A','TBC':'#B8B5AC','Removed':'#5A6784','':'#39466B'};
+  const SC={'Complete':'#7ED957','In Progress':'#4AA3E0','Not Started':'#8593AD','On  Hold':'#EF9F27','On Hold':'#EF9F27','Blocked':'#E24B4A','Blocked/Delayed':'#E24B4A','TBC':'#B8B5AC','Removed':'#5A6784','':'#39466B'};
   const today=new Date(); today.setHours(0,0,0,0);
   grid.innerHTML=names.map((p,pi)=>{
     const bs=groups[p], tot=bs.length;
@@ -1635,6 +1694,137 @@ function renderPeopleList(ti) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TRIALS & OPPS TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+const CAT_COLORS = {MFG:'#4AA3E0', Trial:'#8B7FE8', Opp:'#E58C24'};
+const CATS = ['MFG','Trial','Opp'];
+let TO_LIST=[], TRIAL_FLAGS=[];
+
+function toggleCat(cat){
+  STATE.catShow[cat]=!STATE.catShow[cat];
+  LS.set('catShow',STATE.catShow);
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.toggle('active',!!STATE.catShow[b.dataset.cat]));
+  renderCatChart();
+}
+
+// Picking target: the manual "Picking Start target" column; fallback Start − 30 days
+function pickTargetDate(b){
+  if(b.pickTarget){ const d=new Date(String(b.pickTarget).split('T')[0]); if(!isNaN(d)) return d; }
+  if(b.startd){ const d=new Date(String(b.startd).split('T')[0]); if(!isNaN(d)){ d.setDate(d.getDate()-30); return d; } }
+  return null;
+}
+
+function renderTrialsTab(){
+  renderTrialFlags();
+  renderCatChart();
+  renderTOTable();
+}
+
+function renderTrialFlags(){
+  const el=document.getElementById('trialFlags'); if(!el) return;
+  const today=new Date(); today.setHours(0,0,0,0);
+  TRIAL_FLAGS = STATE.builds.filter(b=>
+    b.mfg==='Trial' && b.status!=='Complete' && b.status!=='Removed' &&
+    /^high/i.test(b.priority||'') && b.startd &&
+    !/complete/i.test(b.picking||'')   // picking already done → nothing to flag
+  ).map(b=>{
+    const pt=pickTargetDate(b);
+    return {b, pt, days: pt?Math.round((pt-today)/86400000):null};
+  }).filter(x=>x.pt && x.days<=10)
+    .sort((a,b)=>a.days-b.days);
+  if(!TRIAL_FLAGS.length){
+    el.innerHTML='<div style="color:#94A2BC;font-size:12px;padding:8px">No high-priority trials with picking due in the next 10 days. ✓</div>';
+    return;
+  }
+  el.innerHTML=TRIAL_FLAGS.map((x,i)=>{
+    const {b,pt,days}=x;
+    const c=days<0?'#E24B4A':(days<=3?'#EF9F27':'#7ED957');
+    const lbl=days<0?`${Math.abs(days)}d overdue`:(days===0?'today':`in ${days}d`);
+    const fromCol=!!b.pickTarget;
+    return `<div class="rw-row" onclick="openTrialFlag(${i})" title="Click for build details">
+      <span class="rw-days" style="background:${c}22;color:${c}">${lbl}</span>
+      <span style="font-weight:700;flex:1;min-width:120px" class="trunc">${b.name}</span>
+      <span style="color:#94A2BC;font-size:11px;max-width:150px" class="trunc">${b.project||b.btype||''}</span>
+      <span style="max-width:170px" class="trunc">${pickCell(b.picking)}</span>
+      <span style="color:#94A2BC;font-size:11px;white-space:nowrap">pick ${pt.toISOString().split('T')[0]}${fromCol?'':' (est.)'}</span>
+      <span style="color:#94A2BC;font-size:11px;white-space:nowrap">start ${String(b.startd).split('T')[0]}</span>
+    </div>`;
+  }).join('');
+}
+function openTrialFlag(i){ if(TRIAL_FLAGS[i]) showBuildModal(TRIAL_FLAGS[i].b); }
+
+// Weekly demand split by MFG/Trial/Opp (total hours across all teams)
+function computeWeekDataByCat(schedBuilds, lookup){
+  const map={};
+  schedBuilds.forEach(b=>{
+    if(!CATS.includes(b.mfg)) return;   // exclude Eng/Services/R&D/etc entirely
+    const lkup=lookup[b.btype]; if(!lkup) return;
+    const total=STATE.teams.reduce((s,t)=>s+(lkup[t.key]||0),0)*(b.qty||1);
+    if(!total) return;
+    const start=getMonday(new Date(b.start)), finish=new Date(b.finish);
+    if(isNaN(start)||isNaN(finish)) return;
+    const weeks=[]; const cur=new Date(start);
+    while(cur<=finish){weeks.push(new Date(cur));cur.setDate(cur.getDate()+7);}
+    if(!weeks.length) weeks.push(start);
+    const hpw=total/weeks.length;
+    weeks.forEach(w=>{
+      const iso=w.toISOString().split('T')[0];
+      if(!map[iso]) map[iso]={weekDate:new Date(w)};
+      map[iso][b.mfg]=(map[iso][b.mfg]||0)+hpw;
+    });
+  });
+  return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([iso,v])=>({iso,...v}));
+}
+
+function renderCatChart(){
+  const canvas=document.getElementById('cCat'); if(!canvas) return;
+  const allWeeks=computeWeekDataByCat(STATE.scheduleBuilds, STATE.lookup);
+  const todayMonday=getMonday(new Date());
+  const weeks=allWeeks.filter(w=>w.weekDate>=todayMonday);
+  const labels=weeks.map(w=>fmtWeek(w.weekDate));
+  const ds=CATS.filter(c=>STATE.catShow[c]).map(c=>({
+    label:c, type:'bar',
+    data:weeks.map(w=>+((w[c]||0)/HRS).toFixed(1)),
+    backgroundColor:CAT_COLORS[c], stack:'cat', borderWidth:0,
+  }));
+  ds.push({label:'Capacity',type:'line',
+    data:weeks.map(w=>+((STATE.fcCapacity!==null?STATE.fcCapacity:totalCapForWeek(w.weekDate))/HRS).toFixed(1)),
+    borderColor:'#E2574F',borderDash:[6,4],borderWidth:2.5,pointRadius:3,pointBackgroundColor:'#E2574F',fill:false,order:0});
+  mkChart('cCat',{type:'bar',data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},datalabels:{display:false},tooltip:{callbacks:{label:ctx=>
+      ctx.dataset.label==='Capacity' ? `Capacity: ${ctx.raw} FTEs (${Math.round(ctx.raw*HRS)}h)` : `${ctx.dataset.label}: ${ctx.raw} FTEs (${Math.round(ctx.raw*HRS)}h)`
+    }}},
+    scales:{x:{stacked:true,grid:{display:false},ticks:{...darkTicks,maxRotation:45,minRotation:45}},
+      y:{stacked:true,title:{display:true,text:'FTEs (30h/wk)',color:'#94A2BC',font:{size:11}},grid:darkGrid,ticks:{...darkTicks,precision:1}}}
+  }});
+}
+
+function renderTOTable(){
+  const body=document.getElementById('toBody'); if(!body) return;
+  TO_LIST = STATE.builds.filter(b=>b.mfg==='Trial'||b.mfg==='Opp')
+    .sort((a,b)=> a.mfg===b.mfg
+      ? String(a.startd||'9999').localeCompare(String(b.startd||'9999'))
+      : (a.mfg==='Trial'?-1:1));
+  document.getElementById('toCount').textContent=TO_LIST.length;
+  body.innerHTML=TO_LIST.map((b,i)=>{
+    const pt=pickTargetDate(b);
+    return `<tr onclick="openTOBuild(${i})" style="cursor:pointer" title="Click for build details">
+      <td style="font-weight:700;max-width:190px" class="trunc">${b.name}</td>
+      <td><span style="color:${CAT_COLORS[b.mfg]||'#94A2BC'};font-weight:700">${b.mfg}</span></td>
+      <td class="trunc" style="max-width:130px;color:#94A2BC">${b.btype||'—'}</td>
+      <td class="trunc" style="max-width:130px;color:#94A2BC">${b.project||'—'}</td>
+      <td>${b.status||'—'}</td>
+      <td>${b.priority||'—'}</td>
+      <td class="trunc" style="max-width:150px">${pickCell(b.picking)}</td>
+      <td style="white-space:nowrap;color:#94A2BC">${pt?pt.toISOString().split('T')[0]+(b.pickTarget?'':' (est.)'):'—'}</td>
+      <td style="white-space:nowrap;color:#94A2BC">${String(b.startd||'').split('T')[0]||'—'}</td>
+      <td style="white-space:nowrap;color:#94A2BC">${b.golive||'—'}</td>
+    </tr>`;
+  }).join('');
+}
+function openTOBuild(i){ if(TO_LIST[i]) showBuildModal(TO_LIST[i]); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // TEAM BLOCKERS
 // ═══════════════════════════════════════════════════════════════════════════════
 const BLOCKER_TYPES = ['Parts/availability','Engineering Sign off','Build Space','Build Resource','Picking Resource','Parts/ECN change','Design Change','Customer Hold','Other'];
@@ -1651,9 +1841,11 @@ function renderTeamBlockers(ti) {
   const t = STATE.teams[ti];
   const el = document.getElementById(`blk_${t.key}`);
   if (!el) return;
-  const ssBlockers = getSmartsheetBlockers(t);
+  // Smartsheet-derived blockers removed by request — panel shows only
+  // manually raised blockers. (Build blockers still visible in the Live
+  // Builds table and blockers chart.)
   const localBlockers = (STATE.teamBlockers[t.key] || []);
-  const total = ssBlockers.length + localBlockers.length;
+  const total = localBlockers.length;
 
   let html = `<div class="blk-section-hd">
     <span>Blockers${total ? ` (${total})` : ''}</span>
@@ -1663,15 +1855,6 @@ function renderTeamBlockers(ti) {
   if (!total) {
     html += `<div class="blk-empty">No active blockers</div>`;
   } else {
-    ssBlockers.forEach(b => {
-      html += `<div class="blk-item">
-        <div class="blk-dot"></div>
-        <div style="flex:1;min-width:0">
-          <div class="blk-build" title="${b.name}">${b.name}</div>
-          <div class="blk-type">${b.blocker}</div>
-        </div>
-      </div>`;
-    });
     localBlockers.forEach((b, idx) => {
       const d = new Date(b.raisedAt);
       const when = `${d.getDate()} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}`;
@@ -1871,6 +2054,7 @@ async function refresh() {
     renderLiveBuilds();
     renderForecastTab();
     renderProjectsTab();
+    renderTrialsTab();
   } catch(e) {
     setSyncStatus('error', e.message);
     if (!STATE.apiKey && /passphrase/i.test(e.message)) {
@@ -1892,6 +2076,7 @@ async function refresh() {
       renderLiveBuilds();
       renderForecastTab();
       renderProjectsTab();
+      renderTrialsTab();
       setSyncStatus('stale','⚙ Settings — add API key to go live');
     }
   } finally {
@@ -1920,6 +2105,7 @@ function showTab(id, el) {
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('tab'+id.charAt(0).toUpperCase()+id.slice(1)).classList.add('active');
   el.classList.add('active');
+  if(id==='trials') renderTrialsTab();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
