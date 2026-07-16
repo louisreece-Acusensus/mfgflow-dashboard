@@ -39,13 +39,16 @@ CORS = {
 class Handler(BaseHTTPRequestHandler):
 
     def _send(self, code, body, ctype='application/json'):
-        self.send_response(code)
-        self.send_header('Content-Type', ctype)
-        for k, v in CORS.items():
-            self.send_header(k, v)
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header('Content-Type', ctype)
+            for k, v in CORS.items():
+                self.send_header(k, v)
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client closed the connection before we finished responding
 
     def _json(self, code, obj):
         self._send(code, json.dumps(obj).encode())
@@ -71,12 +74,15 @@ class Handler(BaseHTTPRequestHandler):
         ctype = 'text/html; charset=utf-8' if fp.endswith('.html') else 'application/octet-stream'
         with open(fp, 'rb') as f:
             body = f.read()
-        self.send_response(200)
-        self.send_header('Content-Type', ctype)
-        self.send_header('Cache-Control', 'no-cache')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', ctype)
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # client closed the connection before we finished responding
 
     def proxy(self, parsed):
         qs = parse_qs(parsed.query)
@@ -112,6 +118,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         pass  # keep the journal quiet
+
+    def handle_error(self, request, client_address, exc_info=None):
+        # Client disconnecting mid-response (BrokenPipeError/ConnectionResetError)
+        # is normal on a dashboard people click away from — don't spam the log.
+        import sys
+        exc = exc_info[1] if exc_info else sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)
 
 
 if __name__ == '__main__':
