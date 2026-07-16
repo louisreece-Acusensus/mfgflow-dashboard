@@ -1,0 +1,10 @@
+# Never commit real secrets — only the .example template is tracked
+mfgflow.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS junk
+.DS_Store
+Thumbs.db
