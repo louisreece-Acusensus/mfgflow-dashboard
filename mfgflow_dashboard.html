@@ -318,7 +318,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
           <th onclick="sortBy('mfg')">MFG/Opp <span id="s_mfg"></span></th>
           <th onclick="sortBy('status')">Status <span id="s_status"></span></th>
           <th onclick="sortBy('finishd')">Finish Date <span id="s_finishd">↑</span></th>
-          <th onclick="sortBy('picking')">Picking <span id="s_picking"></span></th>
+          <th onclick="sortBy('picking')">Picking % <span id="s_picking"></span></th>
           <th onclick="sortBy('rag')">RAG <span id="s_rag"></span></th>
           <th onclick="sortBy('priority')">Priority <span id="s_priority"></span></th>
           <th onclick="sortBy('blocker')">Blocker <span id="s_blocker"></span></th>
@@ -606,6 +606,7 @@ let STATE = {
   apiKey: LS.get('apiKey',''),
   dashPass: LS.get('dashPass',''),
   catShow: LS.get('catShow',{MFG:true,Trial:true,Opp:true}),
+  pickPct: {},   // {assetNumber: percent} — live from the Pick List server, keyed by Asset #
   sheetMain:   LS.get('sheetMain',   SHEET_MAIN),
   sheetLookup: LS.get('sheetLookup', SHEET_LOOKUP),
 };
@@ -645,6 +646,21 @@ async function ssGet(sheetId) {
     throw new Error(`Smartsheet ${resp.status}: ${err.message || resp.statusText}`);
   }
   return resp.json();
+}
+
+// Picking % comes from the Pick List server via the Pi's own proxy (/api/picklist) —
+// never fetched directly from the browser, so that system's login never touches the client.
+// Non-critical: any failure here just leaves Picking cells blank, it never blocks the rest of the sync.
+async function fetchPicklist() {
+  try {
+    const resp = await fetch('/api/picklist', {
+      headers: STATE.dashPass ? { 'x-dash-pass': STATE.dashPass } : {}
+    });
+    if (!resp.ok) throw new Error(`Pick List ${resp.status}`);
+    STATE.pickPct = await resp.json();
+  } catch(e) {
+    console.warn('Pick List fetch failed:', e.message);
+  }
 }
 
 function sheetToRows(sheet) {
@@ -1063,6 +1079,19 @@ function pickCell(p){
   const c=/build stop/i.test(p)?'#E24B4A':(/missing parts/i.test(p)?'#EF9F27':(/complete/i.test(p)?'#7ED957':(/awaiting bom/i.test(p)?'#8B7FE8':'#94A2BC')));
   return `<span style="color:${c};font-weight:600;white-space:nowrap">${p}</span>`;
 }
+// Picking %, sourced from the Pick List server (matched by Asset #) rather than
+// Smartsheet's Picking Status column.
+function pickPct(r){
+  if(!r.asset || !STATE.pickPct) return null;
+  const v = STATE.pickPct[r.asset];
+  return (v===undefined || v===null) ? null : v;
+}
+function pickPctCell(r){
+  const pct = pickPct(r);
+  if(pct===null) return '<span class="dim">—</span>';
+  const c=pct>=100?'#7ED957':(pct>=50?'#4AA3E0':'#EF9F27');
+  return `<div style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span class="pct-bar"><span style="display:block;width:${Math.min(100,Math.max(0,pct))}%;height:100%;background:${c}"></span></span><span style="color:#94A2BC">${Math.round(pct)}%</span></div>`;
+}
 function wdCell(v){
   if(v===''||v===null||v===undefined) return '<span class="dim">—</span>';
   const n=parseFloat(v);
@@ -1082,6 +1111,16 @@ let LAST_RENDERED=[];
 function renderTable(data) {
   const NUMERIC_COLS=['wdleft','qtyu','float'];
   const sorted=[...data].sort((a,b)=>{
+    if(STATE.sortKey==='picking'){
+      // Picking now shows a % from the Pick List server, not Smartsheet text — sort numerically, blanks last
+      const ap=pickPct(a), bp=pickPct(b);
+      let cmp2;
+      if(ap===null&&bp===null) cmp2=0;
+      else if(ap===null) return 1;
+      else if(bp===null) return -1;
+      else cmp2=ap-bp;
+      return STATE.sortAsc?cmp2:-cmp2;
+    }
     const av=a[STATE.sortKey]??'', bv=b[STATE.sortKey]??'';
     let cmp;
     if(NUMERIC_COLS.includes(STATE.sortKey)){
@@ -1107,7 +1146,7 @@ function renderTable(data) {
       <td>${r.mfg||'—'}</td>
       <td>${r.status||'—'}</td>
       <td style="white-space:nowrap;color:#4AA3E0;font-weight:600">${String(r.finishd||'').split('T')[0]||'—'}</td>
-      <td class="trunc" style="max-width:150px">${pickCell(r.picking)}</td>
+      <td class="trunc" style="max-width:150px">${pickPctCell(r)}</td>
       <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
       <td>${r.priority||'—'}</td>
       <td>${blockerCell(r)}</td>
@@ -1136,7 +1175,7 @@ function showBuildModal(r){
       ${r.blocker&&r.blocker!=='None'?` &nbsp;·&nbsp; ${blockerCell(r)}`:''}
     </div>
     <div class="bd-grid">
-      ${item('Picking status',pickCell(r.picking))}
+      ${item('Picking %',pickPctCell(r))}
       ${item('Workdays left',wdCell(r.wdleft))}
       ${item('MFG/Opp',esc(r.mfg))}
       ${item('Priority',esc(r.priority))}
@@ -2047,6 +2086,10 @@ async function refresh() {
       console.warn('Lookup sheet fetch failed, using saved/default:', e.message);
     }
 
+    // Fetch Picking % (never blocks the rest of the sync if it fails)
+    setLoadingTxt('Fetching picking status…');
+    await fetchPicklist();
+
     STATE.syncedAt = new Date();
     const t = STATE.syncedAt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     setSyncStatus('ok',`Synced ${t} · ${builds.length} builds`);
@@ -2074,6 +2117,7 @@ async function refresh() {
         STATE.builds = cached.builds || [];
         STATE.scheduleBuilds = cached.schedBuilds || [];
       }
+      await fetchPicklist();
       populateFilters();
       renderLiveBuilds();
       renderForecastTab();
