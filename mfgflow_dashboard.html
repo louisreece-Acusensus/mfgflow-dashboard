@@ -318,7 +318,6 @@ tr:hover td{background:rgba(255,255,255,.03)}
           <th onclick="sortBy('mfg')">MFG/Opp <span id="s_mfg"></span></th>
           <th onclick="sortBy('status')">Status <span id="s_status"></span></th>
           <th onclick="sortBy('finishd')">Finish Date <span id="s_finishd">↑</span></th>
-          <th onclick="sortBy('pct')">% Compl <span id="s_pct"></span></th>
           <th onclick="sortBy('picking')">Picking <span id="s_picking"></span></th>
           <th onclick="sortBy('rag')">RAG <span id="s_rag"></span></th>
           <th onclick="sortBy('priority')">Priority <span id="s_priority"></span></th>
@@ -432,18 +431,6 @@ tr:hover td{background:rgba(255,255,255,.03)}
     <button class="btn btn-danger btn-sm" id="resetCapBtn" style="display:none" onclick="resetCapacity()">Reset capacity</button>
   </div>
 
-  <!-- Weekly Capacity Planning Grid -->
-  <div class="card" style="margin-bottom:22px">
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
-      <div>
-        <h3>Weekly Capacity Planner</h3>
-        <div class="card-sub" style="margin-bottom:0">Edit each cell to set a team's capacity for that week. <span style="color:#4AA3E0">Blue</span> = custom. <span style="color:#E24B4A">Red</span> = demand &gt; capacity.</div>
-      </div>
-      <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="resetTeamWeekCaps()">Reset all overrides</button>
-    </div>
-    <div class="scroll" id="capGridWrap"><div style="color:#94A2BC;font-size:12px;padding:8px">Sync from Smartsheet to populate the capacity grid.</div></div>
-  </div>
-
   <!-- Total Factory Output chart -->
   <div class="card" style="margin-bottom:22px">
     <h3>Total Factory Output</h3>
@@ -454,6 +441,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
 
   <!-- Dept cards -->
   <div class="dept-grid" id="deptGrid"></div>
+
+  <!-- Weekly Capacity Planning Grid -->
+  <div class="card" style="margin-top:22px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+      <div>
+        <h3>Weekly Capacity Planner</h3>
+        <div class="card-sub" style="margin-bottom:0">Edit each cell to set a team's capacity for that week. <span style="color:#4AA3E0">Blue</span> = custom. <span style="color:#E24B4A">Red</span> = demand &gt; capacity.</div>
+      </div>
+      <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="resetTeamWeekCaps()">Reset all overrides</button>
+    </div>
+    <div class="scroll" id="capGridWrap"><div style="color:#94A2BC;font-size:12px;padding:8px">Sync from Smartsheet to populate the capacity grid.</div></div>
+  </div>
 
 </div>
 
@@ -1081,7 +1080,7 @@ function blockerCell(r){
 
 let LAST_RENDERED=[];
 function renderTable(data) {
-  const NUMERIC_COLS=['pct','wdleft','qtyu','float'];
+  const NUMERIC_COLS=['wdleft','qtyu','float'];
   const sorted=[...data].sort((a,b)=>{
     const av=a[STATE.sortKey]??'', bv=b[STATE.sortKey]??'';
     let cmp;
@@ -1108,7 +1107,6 @@ function renderTable(data) {
       <td>${r.mfg||'—'}</td>
       <td>${r.status||'—'}</td>
       <td style="white-space:nowrap;color:#4AA3E0;font-weight:600">${String(r.finishd||'').split('T')[0]||'—'}</td>
-      <td>${pctCell(r.pct)}</td>
       <td class="trunc" style="max-width:150px">${pickCell(r.picking)}</td>
       <td style="white-space:nowrap"><span class="rag-dot" style="background:${RAGC[r.rag]||RAGC['']}"></span>${r.rag||'—'}</td>
       <td>${r.priority||'—'}</td>
@@ -1138,7 +1136,6 @@ function showBuildModal(r){
       ${r.blocker&&r.blocker!=='None'?` &nbsp;·&nbsp; ${blockerCell(r)}`:''}
     </div>
     <div class="bd-grid">
-      ${item('% Complete',pctCell(r.pct))}
       ${item('Picking status',pickCell(r.picking))}
       ${item('Workdays left',wdCell(r.wdleft))}
       ${item('MFG/Opp',esc(r.mfg))}
@@ -1367,7 +1364,12 @@ function renderCapacityGrid(weeks) {
   }
   const div = STATE.displayUnit === 'fte' ? FTE_HRS : 1;
   const unitSfx = STATE.displayUnit === 'fte' ? ' FTE' : 'h';
-  const step = STATE.displayUnit === 'fte' ? 1 : 5;
+  const step = STATE.displayUnit === 'fte' ? 0.1 : 5;
+  // Match the precision used everywhere else (dept cards / factory chart): one
+  // decimal place for FTEs, whole numbers for hours. Previously this grid rounded
+  // to whole FTEs while the cards below showed one decimal (e.g. "3" vs "3.3"),
+  // which made the two boxes look like they disagreed.
+  const fmtU = v => STATE.displayUnit === 'fte' ? +(v / div).toFixed(1) : Math.round(v / div);
 
   let html = `<table class="cgrid">
     <thead><tr>
@@ -1377,7 +1379,7 @@ function renderCapacityGrid(weeks) {
     <tbody>`;
 
   STATE.teams.forEach(t => {
-    const def = Math.round(teamCap(t) / div);
+    const def = fmtU(teamCap(t));
     html += `<tr>
       <td class="cgrid-team" style="border-left:3px solid ${t.color}">
         <span class="cgrid-name">${t.name}</span>
@@ -1387,13 +1389,13 @@ function renderCapacityGrid(weeks) {
       const iso = w.weekDate.toISOString().split('T')[0];
       const k = `${t.key}:${iso}`;
       const hasOverride = (STATE.teamWeekCaps || {})[k] !== undefined;
-      const capVal = Math.round(getTeamWeekCap(t, w.weekDate) / div);
-      const demand = Math.round((w[t.key] || 0) / div);
+      const capVal = fmtU(getTeamWeekCap(t, w.weekDate));
+      const demand = fmtU(w[t.key] || 0);
       const over = demand > capVal;
       html += `<td class="cgrid-cell${over ? ' cgrid-over' : ''}${hasOverride ? ' cgrid-custom' : ''}">
         <input type="number" class="cgrid-inp${hasOverride ? ' cgrid-inp-mod' : ''}"
           value="${capVal}" min="0" step="${step}"
-          onchange="setTeamWeekCap('${t.key}','${iso}',Math.round(+this.value*${div}))"
+          onchange="setTeamWeekCap('${t.key}','${iso}',Math.round(parseFloat(this.value||0)*${div}))"
           title="${hasOverride ? 'Custom override (modifying updates chart instantly)' : 'Default from team headcount'}">
         <div class="cgrid-dem${over ? ' cgrid-dem-over' : ''}">↓ ${demand}${unitSfx}</div>
       </td>`;
